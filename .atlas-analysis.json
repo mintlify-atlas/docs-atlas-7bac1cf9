@@ -1,0 +1,162 @@
+{
+  "projectType": "saas",
+  "projectName": "Phoenix",
+  "projectDescription": "Open-source AI observability platform for experimentation, evaluation, and troubleshooting of LLM applications",
+  "theme": "mint",
+  "primaryColor": "#0384C3",
+  "lightColor": "#0384C3",
+  "darkColor": "#0384C3",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation",
+              "deployment"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/tracing",
+              "features/evaluation",
+              "features/datasets",
+              "features/experiments",
+              "features/playground",
+              "features/prompt-management"
+            ]
+          },
+          {
+            "group": "Tracing",
+            "pages": [
+              "tracing/overview",
+              "tracing/instrumentation",
+              "tracing/projects",
+              "tracing/sessions",
+              "tracing/annotations",
+              "tracing/cost-tracking"
+            ]
+          },
+          {
+            "group": "Evaluation",
+            "pages": [
+              "evaluation/overview",
+              "evaluation/llm-as-judge",
+              "evaluation/pre-built-metrics",
+              "evaluation/custom-evaluators",
+              "evaluation/batch-evaluation"
+            ]
+          },
+          {
+            "group": "Datasets & Experiments",
+            "pages": [
+              "datasets/overview",
+              "datasets/creating-datasets",
+              "datasets/experiments",
+              "datasets/versioning"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "integrations/overview",
+              "integrations/openai",
+              "integrations/anthropic",
+              "integrations/langchain",
+              "integrations/llamaindex",
+              "integrations/opentelemetry"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Deployment",
+        "groups": [
+          {
+            "group": "Self-Hosting",
+            "pages": [
+              "deployment/docker",
+              "deployment/kubernetes",
+              "deployment/configuration",
+              "deployment/security"
+            ]
+          },
+          {
+            "group": "Cloud",
+            "pages": [
+              "deployment/phoenix-cloud",
+              "deployment/authentication",
+              "deployment/api-keys"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "SDK Reference",
+        "groups": [
+          {
+            "group": "Python SDK",
+            "pages": [
+              "sdk/python/overview",
+              "sdk/python/client",
+              "sdk/python/otel",
+              "sdk/python/evals"
+            ]
+          },
+          {
+            "group": "TypeScript SDK",
+            "pages": [
+              "sdk/typescript/overview",
+              "sdk/typescript/client",
+              "sdk/typescript/otel",
+              "sdk/typescript/evals"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "REST API",
+            "pages": [
+              "api/overview",
+              "api/authentication",
+              "api/traces",
+              "api/evaluations",
+              "api/datasets"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "OpenTelemetry-based tracing for LLM applications",
+    "LLM-as-a-judge evaluation with pre-built metrics",
+    "Dataset versioning for experimentation and fine-tuning",
+    "Experiment tracking for prompts, LLMs, and retrieval",
+    "Interactive playground for prompt optimization",
+    "Prompt management with version control",
+    "Cost tracking across LLM providers",
+    "Multi-framework support (OpenAI, Anthropic, LangChain, LlamaIndex, etc.)",
+    "Self-hosted or cloud deployment options"
+  ],
+  "publicApiSurface": [
+    "launch_app() - Launch Phoenix server",
+    "Client - REST API client",
+    "register() - Register OpenTelemetry tracer",
+    "log_evaluations() - Log evaluation results",
+    "TraceDataset - Trace dataset management",
+    "Session - Phoenix session management",
+    "Instrumentor classes - Auto-instrumentation",
+    "REST API endpoints - /v1/traces, /v1/evaluations, /v1/datasets",
+    "@arizeai/phoenix-client - TypeScript client",
+    "@arizeai/phoenix-otel - TypeScript OpenTelemetry wrapper"
+  ]
+}
