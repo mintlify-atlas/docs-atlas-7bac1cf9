@@ -1,0 +1,236 @@
+---
+title: 'Evaluation Overview'
+description: 'Learn how to evaluate LLM applications with Phoenix'
+icon: 'chart-line'
+---
+
+Phoenix provides a comprehensive evaluation framework for LLM applications, enabling you to assess quality, accuracy, and performance at scale. Evaluations help you understand model behavior, catch issues early, and continuously improve your AI systems.
+
+## What is Evaluation?
+
+Evaluation is the process of measuring how well your LLM application performs on specific criteria. Phoenix supports multiple evaluation approaches:
+
+- **LLM-as-a-Judge**: Use an LLM to evaluate outputs based on criteria like correctness, relevance, or safety
+- **Code-based Evaluations**: Write custom Python functions to check outputs programmatically
+- **Pre-built Metrics**: Leverage battle-tested evaluators for common tasks like hallucination detection
+
+## Client-Side vs Server-Side Evaluations
+
+### Client-Side Evaluations
+
+Client-side evaluations run in your Python environment using the `phoenix.evals` library. This approach gives you:
+
+- **Full control** over evaluation logic and prompts
+- **Flexibility** to use any LLM provider (OpenAI, Anthropic, etc.)
+- **Fast iteration** during development
+- **Offline evaluation** on datasets without needing a Phoenix server
+
+```python
+from phoenix.evals import create_classifier, LLM
+
+llm = LLM(provider="openai", model="gpt-4o")
+
+evaluator = create_classifier(
+    name="relevance",
+    prompt_template="Is this response relevant?\n\nQuery: {input}\nResponse: {output}",
+    llm=llm,
+    choices={"relevant": 1.0, "irrelevant": 0.0}
+)
+
+scores = evaluator.evaluate({
+    "input": "What is the capital of France?",
+    "output": "Paris is the capital of France."
+})
+
+print(scores[0].score)  # 1.0
+```
+
+### Server-Side Evaluations
+
+Server-side evaluations run on the Phoenix platform and automatically evaluate traces as they're collected. Benefits include:
+
+- **Automatic evaluation** of production traffic
+- **Real-time monitoring** of quality metrics
+- **Historical tracking** and trend analysis
+- **Team collaboration** on evaluation criteria
+
+Server-side evaluations are configured through the Phoenix UI and run continuously on your traced data.
+
+## Evaluation Metrics
+
+Phoenix evaluations produce **Score** objects containing:
+
+<ResponseField name="score" type="float">
+  Numeric score (e.g., 0.0 to 1.0)
+</ResponseField>
+
+<ResponseField name="label" type="string">
+  Categorical classification (e.g., "correct", "incorrect")
+</ResponseField>
+
+<ResponseField name="explanation" type="string">
+  LLM's reasoning for the score (for LLM-as-judge evaluations)
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  The evaluator name (e.g., "faithfulness")
+</ResponseField>
+
+<ResponseField name="kind" type="string">
+  Evaluation type: "llm", "code", or "human"
+</ResponseField>
+
+<ResponseField name="direction" type="string">
+  Whether to maximize or minimize the score
+</ResponseField>
+
+```python
+from phoenix.evals.evaluators import Score
+
+score = Score(
+    name="faithfulness",
+    score=1.0,
+    label="faithful",
+    explanation="The response is fully supported by the provided context.",
+    kind="llm",
+    direction="maximize"
+)
+
+score.pretty_print()
+```
+
+## Viewing Evaluation Results
+
+### In Python
+
+Evaluation results are returned as Score objects that you can inspect programmatically:
+
+```python
+scores = evaluator.evaluate(eval_input)
+
+for score in scores:
+    print(f"Name: {score.name}")
+    print(f"Score: {score.score}")
+    print(f"Label: {score.label}")
+    print(f"Explanation: {score.explanation}")
+```
+
+### In DataFrames
+
+When evaluating dataframes, results are added as new columns:
+
+```python
+import pandas as pd
+from phoenix.evals import evaluate_dataframe
+
+df = pd.DataFrame([
+    {"input": "What is AI?", "output": "AI is artificial intelligence"},
+    {"input": "What is ML?", "output": "ML is machine learning"}
+])
+
+results_df = evaluate_dataframe(dataframe=df, evaluators=[evaluator])
+
+# Results include:
+# - Original columns: input, output
+# - Execution details: relevance_execution_details
+# - Scores: relevance_score (JSON-serialized Score objects)
+print(results_df.columns)
+```
+
+### In Phoenix UI
+
+When evaluations are traced (automatic in Phoenix 2.0), they appear in the Phoenix UI:
+
+1. Navigate to the **Traces** view
+2. Filter by evaluator name or score range
+3. Inspect individual traces to see evaluation details
+4. View aggregate metrics and distributions
+
+## Tracing Evaluations
+
+Phoenix automatically traces all evaluations, creating observability into:
+
+- **Evaluation inputs**: What data was evaluated
+- **LLM calls**: Model, prompt, and response for LLM-as-judge
+- **Scores**: Complete Score objects with explanations
+- **Performance**: Latency and error rates
+
+Traces are exported via OpenTelemetry, so you can send them to Phoenix or any OTLP-compatible backend.
+
+```python
+import phoenix as px
+
+# Launch Phoenix locally
+px.launch_app()
+
+# Evaluations are automatically traced
+scores = evaluator.evaluate(eval_input)
+
+# View in Phoenix at http://localhost:6006
+```
+
+## Common Evaluation Patterns
+
+### Quality Checks
+
+Evaluate outputs for correctness, relevance, and completeness:
+
+```python
+from phoenix.evals.metrics import (
+    CorrectnessEvaluator,
+    FaithfulnessEvaluator,
+    ConcisenessEvaluator
+)
+
+llm = LLM(provider="openai", model="gpt-4o-mini")
+
+correctness_eval = CorrectnessEvaluator(llm=llm)
+faithfulness_eval = FaithfulnessEvaluator(llm=llm)
+conciseness_eval = ConcisenessEvaluator(llm=llm)
+```
+
+### RAG Evaluations
+
+Evaluate retrieval-augmented generation systems:
+
+```python
+from phoenix.evals.metrics import DocumentRelevanceEvaluator
+
+relevance_eval = DocumentRelevanceEvaluator(llm=llm)
+
+scores = relevance_eval.evaluate({
+    "input": "What is the capital of France?",
+    "document_text": "Paris is the capital and largest city of France."
+})
+```
+
+### Tool Calling
+
+Evaluate agent tool selection and invocation:
+
+```python
+from phoenix.evals.metrics import (
+    ToolSelectionEvaluator,
+    ToolInvocationEvaluator
+)
+
+tool_selection_eval = ToolSelectionEvaluator(llm=llm)
+tool_invocation_eval = ToolInvocationEvaluator(llm=llm)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="LLM-as-a-Judge" icon="gavel" href="/evaluation/llm-as-judge">
+    Learn about using LLMs to evaluate outputs
+  </Card>
+  <Card title="Pre-built Metrics" icon="list-check" href="/evaluation/pre-built-metrics">
+    Explore ready-to-use evaluation metrics
+  </Card>
+  <Card title="Custom Evaluators" icon="code" href="/evaluation/custom-evaluators">
+    Build your own evaluation logic
+  </Card>
+  <Card title="Batch Evaluation" icon="layer-group" href="/evaluation/batch-evaluation">
+    Evaluate datasets at scale
+  </Card>
+</CardGroup>

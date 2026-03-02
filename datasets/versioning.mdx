@@ -1,0 +1,413 @@
+---
+title: Dataset Versioning
+description: Learn how to manage dataset versions, tags, and exports in Phoenix
+---
+
+Phoenix automatically versions your datasets, ensuring reproducibility and enabling you to track changes over time. Every modification to a dataset creates a new version, while experiments remain linked to their original versions.
+
+## Understanding Versions
+
+Dataset versions are created automatically when you:
+
+- **Create a new dataset** - Creates version 1
+- **Add examples** - Creates a new version with added examples
+- **Modify examples** - Creates a new version with changes (future feature)
+
+Each version has:
+- A unique **version_id**
+- A **created_at** timestamp
+- Optional **description** and **metadata**
+- Links to all **experiments** run on that version
+
+```python
+from phoenix.client import Client
+
+client = Client()
+
+# Create initial dataset (version 1)
+dataset_v1 = client.datasets.create_dataset(
+    name="qa-dataset",
+    inputs=[{"question": "What is AI?"}],
+    outputs=[{"answer": "Artificial Intelligence is..."}]
+)
+
+print(f"Version ID: {dataset_v1.version_id}")
+print(f"Created at: {dataset_v1.created_at}")
+
+# Add more examples (creates version 2)
+dataset_v2 = client.datasets.add_examples_to_dataset(
+    dataset="qa-dataset",
+    inputs=[{"question": "What is ML?"}],
+    outputs=[{"answer": "Machine Learning is..."}]
+)
+
+print(f"New version ID: {dataset_v2.version_id}")
+print(f"Example count v1: {len(dataset_v1)}")
+print(f"Example count v2: {len(dataset_v2)}")
+```
+
+## Listing Versions
+
+Retrieve all versions of a dataset:
+
+```python
+from phoenix.client import Client
+
+client = Client()
+
+# Get all versions (latest first)
+versions = client.datasets.get_dataset_versions(
+    dataset="qa-dataset",
+    limit=100  # Get up to 100 most recent versions
+)
+
+# Display version history
+for version in versions:
+    print(f"Version: {version['version_id']}")
+    print(f"  Created: {version['created_at']}")
+    if version.get('description'):
+        print(f"  Description: {version['description']}")
+    if version.get('metadata'):
+        print(f"  Metadata: {version['metadata']}")
+    print()
+```
+
+## Retrieving Specific Versions
+
+Access any historical version by its version_id:
+
+```python
+from phoenix.client import Client
+
+client = Client()
+
+# Get latest version (default)
+latest = client.datasets.get_dataset(dataset="qa-dataset")
+print(f"Latest version: {latest.version_id} with {len(latest)} examples")
+
+# Get specific version
+specific = client.datasets.get_dataset(
+    dataset="qa-dataset",
+    version_id="v_abc123def456"
+)
+print(f"Specific version: {specific.version_id} with {len(specific)} examples")
+
+# Compare versions
+print(f"Examples added: {len(latest) - len(specific)}")
+```
+
+## Version Reproducibility
+
+Experiments are permanently linked to specific dataset versions:
+
+```python
+from phoenix.client import Client
+from phoenix.experiments import run_experiment
+
+client = Client()
+
+# Get dataset at current version
+dataset_v1 = client.datasets.get_dataset(dataset="qa-dataset")
+
+# Run experiment on v1
+experiment_v1 = run_experiment(
+    dataset=dataset_v1,
+    task=my_task,
+    experiment_name="test-on-v1"
+)
+
+print(f"Experiment dataset version: {dataset_v1.version_id}")
+
+# Add more examples (creates v2)
+dataset_v2 = client.datasets.add_examples_to_dataset(
+    dataset="qa-dataset",
+    inputs=[{"question": "New question"}],
+    outputs=[{"answer": "New answer"}]
+)
+
+# Run experiment on v2
+experiment_v2 = run_experiment(
+    dataset=dataset_v2,
+    task=my_task,
+    experiment_name="test-on-v2"
+)
+
+print(f"Experiment v1 still references: {dataset_v1.version_id}")
+print(f"Experiment v2 references: {dataset_v2.version_id}")
+
+# You can re-run on old versions
+rerun_v1 = run_experiment(
+    dataset=client.datasets.get_dataset(
+        dataset="qa-dataset",
+        version_id=dataset_v1.version_id
+    ),
+    task=improved_task,
+    experiment_name="improved-on-v1"
+)
+```
+
+## Exporting Datasets
+
+### Export to DataFrame
+
+Convert datasets to pandas DataFrames for analysis or storage:
+
+```python
+from phoenix.client import Client
+import pandas as pd
+
+client = Client()
+
+dataset = client.datasets.get_dataset(dataset="qa-dataset")
+
+# Export to DataFrame
+df = dataset.to_dataframe()
+print(df.head())
+print(df.columns)
+# Index(['input', 'output', 'metadata'], dtype='object')
+# Index name: 'example_id'
+
+# Save to CSV
+df.to_csv("dataset_export.csv")
+
+# Save to Parquet
+df.to_parquet("dataset_export.parquet")
+```
+
+### Export to JSON
+
+Export datasets in a portable JSON format:
+
+```python
+import json
+from phoenix.client import Client
+
+client = Client()
+
+dataset = client.datasets.get_dataset(dataset="qa-dataset")
+
+# Convert to dict
+dataset_dict = dataset.to_dict()
+
+# Save to JSON file
+with open("dataset_export.json", "w") as f:
+    json.dump(dataset_dict, f, indent=2, default=str)
+
+print("Exported dataset to JSON")
+```
+
+### Import from JSON
+
+Restore datasets from JSON exports:
+
+```python
+import json
+from phoenix.client import Client
+from phoenix.client.resources.datasets import Dataset
+
+client = Client()
+
+# Load from JSON
+with open("dataset_export.json", "r") as f:
+    dataset_dict = json.load(f)
+
+# Restore Dataset object
+restored = Dataset.from_dict(dataset_dict)
+
+print(f"Restored dataset: {restored.name}")
+print(f"Version: {restored.version_id}")
+print(f"Examples: {len(restored)}")
+
+# Can now use in experiments
+from phoenix.experiments import run_experiment
+
+experiment = run_experiment(
+    dataset=restored,
+    task=my_task,
+    experiment_name="test-restored"
+)
+```
+
+## Export Specific Versions
+
+Export any version for archival or sharing:
+
+```python
+from phoenix.client import Client
+import pandas as pd
+
+client = Client()
+
+# Get all versions
+versions = client.datasets.get_dataset_versions(dataset="qa-dataset")
+
+# Export each version
+for version in versions:
+    dataset = client.datasets.get_dataset(
+        dataset="qa-dataset",
+        version_id=version['version_id']
+    )
+    
+    # Save with version in filename
+    filename = f"dataset_{version['version_id']}.csv"
+    df = dataset.to_dataframe()
+    df.to_csv(filename)
+    
+    print(f"Exported {filename}: {len(dataset)} examples")
+```
+
+## Export with Splits
+
+Export specific dataset splits:
+
+```python
+from phoenix.client import Client
+
+client = Client()
+
+# Export train split
+train_data = client.datasets.get_dataset(
+    dataset="ml-dataset",
+    splits=["train"]
+)
+train_df = train_data.to_dataframe()
+train_df.to_csv("train_split.csv")
+
+# Export validation split
+val_data = client.datasets.get_dataset(
+    dataset="ml-dataset",
+    splits=["validation"]
+)
+val_df = val_data.to_dataframe()
+val_df.to_csv("validation_split.csv")
+
+# Export test split
+test_data = client.datasets.get_dataset(
+    dataset="ml-dataset",
+    splits=["test"]
+)
+test_df = test_data.to_dataframe()
+test_df.to_csv("test_split.csv")
+```
+
+## Working with Version Metadata
+
+While Phoenix automatically creates versions, you can track additional context:
+
+```python
+from phoenix.client import Client
+
+client = Client()
+
+# Create dataset with metadata
+dataset = client.datasets.create_dataset(
+    name="versioned-dataset",
+    inputs=[{"question": "Q1"}],
+    outputs=[{"answer": "A1"}],
+    dataset_description="Initial version with baseline examples"
+)
+
+print(f"Version 1: {dataset.version_id}")
+print(f"Description: {dataset.description}")
+
+# Add examples with context
+updated = client.datasets.add_examples_to_dataset(
+    dataset="versioned-dataset",
+    inputs=[{"question": "Q2"}, {"question": "Q3"}],
+    outputs=[{"answer": "A2"}, {"answer": "A3"}]
+)
+
+print(f"Version 2: {updated.version_id}")
+
+# Track version history in your own metadata
+versions_log = []
+for version in client.datasets.get_dataset_versions(dataset="versioned-dataset"):
+    versions_log.append({
+        "version_id": version['version_id'],
+        "created_at": version['created_at'],
+        "description": version.get('description', 'N/A')
+    })
+
+print("Version history:")
+for log in versions_log:
+    print(f"  {log['created_at']}: {log['version_id']} - {log['description']}")
+```
+
+## Version Cleanup Strategy
+
+While Phoenix keeps all versions, you can implement your own archival strategy:
+
+<CodeGroup>
+```python Identify Old Versions
+from datetime import datetime, timedelta, timezone
+from phoenix.client import Client
+
+client = Client()
+
+# Find versions older than 90 days
+cutoff = datetime.now(timezone.utc) - timedelta(days=90)
+versions = client.datasets.get_dataset_versions(dataset="qa-dataset")
+
+old_versions = [
+    v for v in versions
+    if v['created_at'] < cutoff
+]
+
+print(f"Found {len(old_versions)} versions older than 90 days")
+```
+
+```python Archive to External Storage
+import json
+from phoenix.client import Client
+
+client = Client()
+
+versions = client.datasets.get_dataset_versions(dataset="qa-dataset")
+
+for version in versions:
+    dataset = client.datasets.get_dataset(
+        dataset="qa-dataset",
+        version_id=version['version_id']
+    )
+    
+    # Export to external storage (S3, GCS, etc.)
+    archive_data = dataset.to_dict()
+    filename = f"archive/{dataset.name}_{version['version_id']}.json"
+    
+    with open(filename, 'w') as f:
+        json.dump(archive_data, f, default=str)
+    
+    print(f"Archived {filename}")
+```
+</CodeGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Pin Versions" icon="thumbtack">
+    Reference specific version_ids in production code for reproducibility.
+  </Card>
+  
+  <Card title="Document Changes" icon="file-text">
+    Use descriptive dataset_description when creating versions to track what changed.
+  </Card>
+  
+  <Card title="Regular Exports" icon="download">
+    Periodically export important versions to external storage for backup.
+  </Card>
+  
+  <Card title="Version Comparison" icon="code-compare">
+    Compare experiments across versions to understand impact of dataset changes.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Creating Datasets" icon="database" href="/datasets/creating-datasets">
+    Learn how to create and populate datasets
+  </Card>
+  <Card title="Running Experiments" icon="flask" href="/datasets/experiments">
+    Run experiments on your versioned datasets
+  </Card>
+</CardGroup>

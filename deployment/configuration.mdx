@@ -1,0 +1,442 @@
+---
+title: Configuration Reference
+description: Complete reference for Phoenix environment variables and settings
+---
+
+Configure Phoenix using environment variables for database, authentication, networking, and more.
+
+## Database Configuration
+
+### Connection URL
+
+<ParamField path="PHOENIX_SQL_DATABASE_URL" type="string">
+  Complete database connection URL. Supports SQLite and PostgreSQL:
+  
+  ```bash
+  # SQLite (development)
+  PHOENIX_SQL_DATABASE_URL=sqlite:///phoenix.db
+  
+  # PostgreSQL (production)
+  PHOENIX_SQL_DATABASE_URL=postgresql://user:password@host:5432/dbname
+  ```
+</ParamField>
+
+### PostgreSQL Components
+
+Alternatively, configure PostgreSQL using individual components:
+
+<ParamField path="PHOENIX_POSTGRES_HOST" type="string">
+  PostgreSQL server hostname (e.g., `localhost`, `postgres.example.com`, RDS endpoint)
+</ParamField>
+
+<ParamField path="PHOENIX_POSTGRES_PORT" type="integer" default="5432">
+  PostgreSQL server port
+</ParamField>
+
+<ParamField path="PHOENIX_POSTGRES_USER" type="string" required>
+  PostgreSQL username
+</ParamField>
+
+<ParamField path="PHOENIX_POSTGRES_PASSWORD" type="string">
+  PostgreSQL password (not used when AWS IAM auth is enabled)
+</ParamField>
+
+<ParamField path="PHOENIX_POSTGRES_DB" type="string" required>
+  PostgreSQL database name
+</ParamField>
+
+<ParamField path="PHOENIX_SQL_DATABASE_SCHEMA" type="string">
+  PostgreSQL schema to use (ignored for SQLite)
+</ParamField>
+
+### AWS RDS IAM Authentication
+
+<ParamField path="PHOENIX_POSTGRES_USE_AWS_IAM_AUTH" type="boolean" default="false">
+  Enable AWS RDS IAM database authentication. Requires `boto3` installed via `pip install 'arize-phoenix[aws]'`
+  
+  When enabled:
+  - Do not set `PHOENIX_POSTGRES_PASSWORD`
+  - AWS credentials must be configured (environment, IAM role, or `~/.aws/credentials`)
+  - Database user must be IAM-enabled in RDS/Aurora
+  - SSL is required
+</ParamField>
+
+<ParamField path="PHOENIX_POSTGRES_AWS_IAM_TOKEN_LIFETIME_SECONDS" type="integer" default="840">
+  Token lifetime for connection pool recycling (AWS tokens valid for 15 minutes)
+</ParamField>
+
+### Storage and Retention
+
+<ParamField path="PHOENIX_WORKING_DIR" type="string" default="~/.phoenix">
+  Directory for saving, loading, and exporting data. Must be writable by Phoenix.
+</ParamField>
+
+<ParamField path="PHOENIX_DEFAULT_RETENTION_POLICY_DAYS" type="integer" default="0">
+  Automatic trace cleanup after this many days. Set to `0` to disable.
+</ParamField>
+
+<ParamField path="PHOENIX_DATABASE_ALLOCATED_STORAGE_CAPACITY_GIBIBYTES" type="float">
+  Allocated storage capacity in GiB (for monitoring and alerts)
+</ParamField>
+
+<ParamField path="PHOENIX_DATABASE_USAGE_EMAIL_WARNING_THRESHOLD_PERCENTAGE" type="float">
+  Send email alerts when storage exceeds this percentage (requires SMTP)
+</ParamField>
+
+<ParamField path="PHOENIX_DATABASE_USAGE_INSERTION_BLOCKING_THRESHOLD_PERCENTAGE" type="float">
+  Block new insertions when storage exceeds this percentage
+</ParamField>
+
+## Server Configuration
+
+### Network Settings
+
+<ParamField path="PHOENIX_HOST" type="string" default="0.0.0.0">
+  IP address to bind Phoenix server. Use `::` for IPv6.
+</ParamField>
+
+<ParamField path="PHOENIX_PORT" type="integer" default="6006">
+  Port for Phoenix web UI and HTTP API
+</ParamField>
+
+<ParamField path="PHOENIX_GRPC_PORT" type="integer" default="4317">
+  Port for OpenTelemetry gRPC collector
+</ParamField>
+
+<ParamField path="PHOENIX_HOST_ROOT_PATH" type="string" default="/">
+  Root path prefix for Phoenix UI and API (e.g., `/phoenix` for reverse proxy)
+</ParamField>
+
+<ParamField path="PHOENIX_ROOT_URL" type="string">
+  External root URL for Phoenix (used in emails and redirects)
+  
+  ```bash
+  PHOENIX_ROOT_URL=https://phoenix.example.com
+  ```
+</ParamField>
+
+### Performance and Limits
+
+<ParamField path="PHOENIX_MAX_SPANS_QUEUE_SIZE" type="integer" default="20000">
+  Maximum spans in processing queue before rejecting requests. 
+  
+  Memory usage: ~50KiB per span means 20,000 spans ≈ 1GiB
+</ParamField>
+
+<ParamField path="PHOENIX_ENABLE_PROMETHEUS" type="boolean" default="false">
+  Enable Prometheus metrics endpoint on port 9090
+</ParamField>
+
+### Telemetry and Resources
+
+<ParamField path="PHOENIX_TELEMETRY_ENABLED" type="boolean" default="true">
+  Master toggle for analytics tracking (FullStory and Scarf.sh)
+</ParamField>
+
+<ParamField path="PHOENIX_ALLOW_EXTERNAL_RESOURCES" type="boolean" default="true">
+  Allow external resources (Google Fonts, CDNs). Set to `false` in air-gapped environments.
+</ParamField>
+
+## Authentication and Security
+
+### Basic Authentication
+
+<ParamField path="PHOENIX_ENABLE_AUTH" type="boolean" default="false">
+  Enable authentication and authorization
+</ParamField>
+
+<ParamField path="PHOENIX_DISABLE_BASIC_AUTH" type="boolean" default="false">
+  Disable password-based authentication (use only OAuth2/LDAP)
+</ParamField>
+
+<ParamField path="PHOENIX_SECRET" type="string" required>
+  Secret key for JWT signing. Must be:
+  - At least 32 characters
+  - Include at least one digit and one lowercase letter
+  
+  Generate with:
+  ```bash
+  openssl rand -base64 32
+  ```
+</ParamField>
+
+<ParamField path="PHOENIX_ADMIN_SECRET" type="string">
+  Admin secret key for privileged operations
+</ParamField>
+
+<ParamField path="PHOENIX_DEFAULT_ADMIN_INITIAL_PASSWORD" type="string" default="admin">
+  Initial password for default admin user
+</ParamField>
+
+### Token Expiry
+
+<ParamField path="PHOENIX_ACCESS_TOKEN_EXPIRY_MINUTES" type="integer" default="60">
+  Access token expiration in minutes
+</ParamField>
+
+<ParamField path="PHOENIX_REFRESH_TOKEN_EXPIRY_MINUTES" type="integer" default="43200">
+  Refresh token expiration in minutes (30 days)
+</ParamField>
+
+<ParamField path="PHOENIX_PASSWORD_RESET_TOKEN_EXPIRY_MINUTES" type="integer" default="60">
+  Password reset token expiration in minutes
+</ParamField>
+
+### Cookies and CORS
+
+<ParamField path="PHOENIX_USE_SECURE_COOKIES" type="boolean" default="false">
+  Enable secure cookies (required for HTTPS)
+</ParamField>
+
+<ParamField path="PHOENIX_COOKIES_PATH" type="string" default="/">
+  Cookie path (set when Phoenix is hosted under a sub-path)
+</ParamField>
+
+<ParamField path="PHOENIX_ALLOWED_ORIGINS" type="string">
+  Comma-separated list of allowed CORS origins:
+  
+  ```bash
+  PHOENIX_ALLOWED_ORIGINS=https://app.example.com,https://dashboard.example.com
+  ```
+</ParamField>
+
+<ParamField path="PHOENIX_CSRF_TRUSTED_ORIGINS" type="string">
+  Comma-separated list of trusted origins for CSRF protection:
+  
+  ```bash
+  PHOENIX_CSRF_TRUSTED_ORIGINS=https://phoenix.example.com
+  ```
+</ParamField>
+
+### Admin Users
+
+<ParamField path="PHOENIX_ADMINS" type="string">
+  Semicolon-separated list of admin users (username=email):
+  
+  ```bash
+  PHOENIX_ADMINS="John Doe=john@example.com;Jane Doe=jane@example.com"
+  ```
+  
+  Users created with random passwords that must be reset on first login.
+</ParamField>
+
+## LDAP Authentication
+
+See [Security Configuration](/deployment/security#ldap-authentication) for complete LDAP setup.
+
+<ParamField path="PHOENIX_LDAP_HOST" type="string">
+  LDAP server hostname (comma-separated for failover)
+</ParamField>
+
+<ParamField path="PHOENIX_LDAP_PORT" type="integer" default="389">
+  LDAP server port (389 for StartTLS, 636 for LDAPS)
+</ParamField>
+
+<ParamField path="PHOENIX_LDAP_TLS_MODE" type="string" default="starttls">
+  TLS mode: `starttls`, `ldaps`, or `none`
+</ParamField>
+
+<ParamField path="PHOENIX_LDAP_BIND_DN" type="string">
+  Service account DN for LDAP binding
+</ParamField>
+
+<ParamField path="PHOENIX_LDAP_USER_SEARCH_BASE_DNS" type="string">
+  Comma-separated list of base DNs for user search
+</ParamField>
+
+## OAuth2/OIDC
+
+See [Security Configuration](/deployment/security#oauth2-oidc) for provider setup.
+
+<ParamField path="PHOENIX_OAUTH2_{PROVIDER}_CLIENT_ID" type="string">
+  OAuth2 client ID (replace `{PROVIDER}` with provider name in uppercase)
+</ParamField>
+
+<ParamField path="PHOENIX_OAUTH2_{PROVIDER}_CLIENT_SECRET" type="string">
+  OAuth2 client secret
+</ParamField>
+
+<ParamField path="PHOENIX_OAUTH2_{PROVIDER}_OIDC_CONFIG_URL" type="string">
+  OIDC discovery URL (`.well-known/openid-configuration`)
+</ParamField>
+
+## TLS/SSL Configuration
+
+<ParamField path="PHOENIX_TLS_ENABLED" type="boolean" default="false">
+  Enable TLS for Phoenix server
+</ParamField>
+
+<ParamField path="PHOENIX_TLS_ENABLED_FOR_HTTP" type="boolean" default="false">
+  Enable TLS for HTTP endpoints
+</ParamField>
+
+<ParamField path="PHOENIX_TLS_ENABLED_FOR_GRPC" type="boolean" default="false">
+  Enable TLS for gRPC endpoints
+</ParamField>
+
+<ParamField path="PHOENIX_TLS_CERT_FILE" type="string">
+  Path to TLS certificate file (PEM format)
+</ParamField>
+
+<ParamField path="PHOENIX_TLS_KEY_FILE" type="string">
+  Path to TLS private key file (PEM format)
+</ParamField>
+
+<ParamField path="PHOENIX_TLS_KEY_FILE_PASSWORD" type="string">
+  Password for encrypted private key
+</ParamField>
+
+<ParamField path="PHOENIX_TLS_CA_FILE" type="string">
+  Path to CA certificate for client verification (mutual TLS)
+</ParamField>
+
+<ParamField path="PHOENIX_TLS_VERIFY_CLIENT" type="boolean" default="false">
+  Enable client certificate verification
+</ParamField>
+
+## Email (SMTP) Configuration
+
+<ParamField path="PHOENIX_SMTP_HOSTNAME" type="string">
+  SMTP server hostname
+</ParamField>
+
+<ParamField path="PHOENIX_SMTP_PORT" type="integer" default="587">
+  SMTP server port (typically 587 for TLS, 465 for SSL)
+</ParamField>
+
+<ParamField path="PHOENIX_SMTP_USERNAME" type="string">
+  SMTP authentication username
+</ParamField>
+
+<ParamField path="PHOENIX_SMTP_PASSWORD" type="string">
+  SMTP authentication password
+</ParamField>
+
+<ParamField path="PHOENIX_SMTP_MAIL_FROM" type="string" default="noreply@arize.com">
+  Sender email address for system emails
+</ParamField>
+
+<ParamField path="PHOENIX_SMTP_VALIDATE_CERTS" type="boolean" default="true">
+  Validate SMTP server TLS certificates
+</ParamField>
+
+## Logging
+
+<ParamField path="PHOENIX_LOGGING_LEVEL" type="string" default="info">
+  Application logging level: `debug`, `info`, `warning`, `error`, `critical`
+</ParamField>
+
+<ParamField path="PHOENIX_DB_LOGGING_LEVEL" type="string" default="warning">
+  Database ORM logging level
+</ParamField>
+
+<ParamField path="PHOENIX_LOGGING_MODE" type="string" default="default">
+  Logging format: `default` or `structured` (JSON)
+</ParamField>
+
+<ParamField path="PHOENIX_LOG_MIGRATIONS" type="boolean" default="true">
+  Log database migration operations
+</ParamField>
+
+## OpenTelemetry Instrumentation
+
+<ParamField path="PHOENIX_SERVER_INSTRUMENTATION_OTLP_TRACE_COLLECTOR_HTTP_ENDPOINT" type="string">
+  HTTP endpoint for Phoenix server's own traces
+</ParamField>
+
+<ParamField path="PHOENIX_SERVER_INSTRUMENTATION_OTLP_TRACE_COLLECTOR_GRPC_ENDPOINT" type="string">
+  gRPC endpoint for Phoenix server's own traces
+</ParamField>
+
+## Advanced Settings
+
+<ParamField path="PHOENIX_DANGEROUSLY_DISABLE_MIGRATIONS" type="boolean" default="false">
+  Disable database migrations (for development only)
+  
+  <Warning>
+    Only use during development when switching branches. Can leave database in inconsistent state.
+  </Warning>
+</ParamField>
+
+<ParamField path="PHOENIX_MIGRATE_INDEX_CONCURRENTLY" type="boolean" default="false">
+  Use `CREATE INDEX CONCURRENTLY` for PostgreSQL migrations (avoids table locks)
+</ParamField>
+
+<ParamField path="PHOENIX_DISABLE_RATE_LIMIT" type="boolean" default="false">
+  Disable API rate limiting
+</ParamField>
+
+<ParamField path="PHOENIX_MASK_INTERNAL_SERVER_ERRORS" type="boolean" default="true">
+  Mask internal errors in GraphQL/REST responses
+</ParamField>
+
+## Configuration Examples
+
+### Development (SQLite)
+
+```bash
+PHOENIX_PORT=6006
+PHOENIX_SQL_DATABASE_URL=sqlite:///phoenix.db
+PHOENIX_ENABLE_AUTH=false
+PHOENIX_LOGGING_LEVEL=debug
+```
+
+### Production (PostgreSQL + Auth)
+
+```bash
+# Database
+PHOENIX_SQL_DATABASE_URL=postgresql://phoenix:${DB_PASSWORD}@postgres.example.com:5432/phoenix
+PHOENIX_DEFAULT_RETENTION_POLICY_DAYS=30
+
+# Server
+PHOENIX_HOST=0.0.0.0
+PHOENIX_PORT=6006
+PHOENIX_ROOT_URL=https://phoenix.company.com
+PHOENIX_ENABLE_PROMETHEUS=true
+
+# Authentication
+PHOENIX_ENABLE_AUTH=true
+PHOENIX_SECRET=${PHOENIX_SECRET}
+PHOENIX_USE_SECURE_COOKIES=true
+
+# SMTP
+PHOENIX_SMTP_HOSTNAME=smtp.gmail.com
+PHOENIX_SMTP_PORT=587
+PHOENIX_SMTP_USERNAME=phoenix@company.com
+PHOENIX_SMTP_PASSWORD=${SMTP_PASSWORD}
+PHOENIX_SMTP_MAIL_FROM=phoenix@company.com
+
+# TLS
+PHOENIX_TLS_ENABLED_FOR_HTTP=true
+PHOENIX_TLS_CERT_FILE=/etc/phoenix/tls/cert.pem
+PHOENIX_TLS_KEY_FILE=/etc/phoenix/tls/key.pem
+
+# Logging
+PHOENIX_LOGGING_LEVEL=info
+PHOENIX_LOGGING_MODE=structured
+```
+
+### AWS RDS with IAM Auth
+
+```bash
+PHOENIX_POSTGRES_HOST=phoenix-db.abc123.us-east-1.rds.amazonaws.com
+PHOENIX_POSTGRES_PORT=5432
+PHOENIX_POSTGRES_USER=phoenix_iam
+PHOENIX_POSTGRES_DB=phoenix
+PHOENIX_POSTGRES_USE_AWS_IAM_AUTH=true
+PHOENIX_POSTGRES_AWS_IAM_TOKEN_LIFETIME_SECONDS=840
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Security" icon="shield" href="/deployment/security">
+    Configure authentication and encryption
+  </Card>
+  <Card title="Docker" icon="docker" href="/deployment/docker">
+    Deploy with Docker and Docker Compose
+  </Card>
+  <Card title="Kubernetes" icon="dharmachakra" href="/deployment/kubernetes">
+    Deploy with Kubernetes and Helm
+  </Card>
+</CardGroup>

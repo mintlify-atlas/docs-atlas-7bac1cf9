@@ -1,0 +1,515 @@
+---
+title: Kubernetes Deployment
+description: Deploy Phoenix on Kubernetes using Helm charts
+---
+
+Deploy Phoenix on Kubernetes with the official Helm chart for production-grade orchestration.
+
+## Prerequisites
+
+- Kubernetes cluster (v1.24+)
+- Helm 3.0+
+- kubectl configured for your cluster
+
+## Quick Start
+
+Install Phoenix using the Helm chart:
+
+<Steps>
+  <Step title="Add the Helm repository">
+    ```bash
+    helm repo add groundhog2k https://groundhog2k.github.io/helm-charts/
+    helm repo update
+    ```
+  </Step>
+  
+  <Step title="Install Phoenix">
+    ```bash
+    helm install phoenix oci://registry-1.docker.io/arizephoenix/phoenix-helm \
+      --set auth.enableAuth=true \
+      --set auth.defaultAdminPassword=changeme
+    ```
+  </Step>
+  
+  <Step title="Access Phoenix">
+    Forward the port to access Phoenix locally:
+    
+    ```bash
+    kubectl port-forward svc/phoenix 6006:6006
+    ```
+    
+    Access at `http://localhost:6006`
+  </Step>
+</Steps>
+
+## Helm Chart Configuration
+
+### values.yaml
+
+Create a `values.yaml` file to customize your deployment:
+
+```yaml
+# Replica configuration
+replicaCount: 1
+
+# Image configuration
+image:
+  registry: docker.io
+  repository: arizephoenix/phoenix
+  tag: version-13.5.0-nonroot
+  pullPolicy: IfNotPresent
+
+# Server configuration
+server:
+  port: 6006
+  grpcPort: 4317
+  workingDir: /data
+  enablePrometheus: true
+
+# Database configuration (PostgreSQL)
+postgresql:
+  enabled: true
+  image:
+    registry: docker.io
+    repository: postgres
+    tag: "16"
+  userDatabase:
+    name:
+      value: phoenix
+    user:
+      value: phoenix
+    password:
+      value: phoenix
+  storage:
+    requestedSize: 20Gi
+
+# Authentication
+auth:
+  enableAuth: true
+  defaultAdminPassword: changeme
+  accessTokenExpiryMinutes: 60
+  refreshTokenExpiryMinutes: 43200
+
+# Service configuration
+service:
+  type: NodePort
+
+# Ingress
+ingress:
+  enabled: true
+  host: phoenix.example.com
+  tls:
+    enabled: true
+
+# Resources
+resources:
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 1Gi
+```
+
+Install with your custom values:
+
+```bash
+helm install phoenix oci://registry-1.docker.io/arizephoenix/phoenix-helm \
+  -f values.yaml
+```
+
+## Database Strategies
+
+Choose one of four database strategies:
+
+### Strategy 1: Built-in PostgreSQL (Recommended)
+
+```yaml
+postgresql:
+  enabled: true
+  storage:
+    requestedSize: 20Gi
+
+persistence:
+  enabled: false
+
+database:
+  url: ""
+```
+
+### Strategy 2: External PostgreSQL
+
+```yaml
+postgresql:
+  enabled: false
+
+persistence:
+  enabled: false
+
+database:
+  url: postgresql://user:password@your-rds-endpoint.region.rds.amazonaws.com:5432/phoenix
+```
+
+### Strategy 3: SQLite with Persistence
+
+```yaml
+postgresql:
+  enabled: false
+
+persistence:
+  enabled: true
+  size: 20Gi
+  storageClass: standard
+
+database:
+  url: ""
+```
+
+### Strategy 4: In-Memory (Testing Only)
+
+```yaml
+postgresql:
+  enabled: false
+
+persistence:
+  inMemory: true
+```
+
+<Warning>
+  In-memory mode loses all data on pod restart. Only use for demos or testing.
+</Warning>
+
+## Production Deployment
+
+### Full Production Configuration
+
+```yaml
+# High availability
+replicaCount: 3
+
+deployment:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+
+# External PostgreSQL (managed service)
+postgresql:
+  enabled: false
+
+database:
+  url: postgresql://phoenix:${DB_PASSWORD}@postgres-primary.default.svc.cluster.local:5432/phoenix
+  postgres:
+    useAwsIamAuth: true  # For AWS RDS
+
+# Security
+securityContext:
+  pod:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 65532
+    fsGroup: 65532
+  container:
+    enabled: true
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
+# Ingress with TLS
+ingress:
+  enabled: true
+  host: phoenix.company.com
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  tls:
+    enabled: true
+
+# Resources
+resources:
+  limits:
+    cpu: 2000m
+    memory: 4Gi
+  requests:
+    cpu: 1000m
+    memory: 2Gi
+
+# Health checks
+healthChecks:
+  livenessProbe:
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# Authentication
+auth:
+  enableAuth: true
+  useSecureCookies: true
+  ldap:
+    enabled: true
+    host: ldap.company.com
+    tlsMode: starttls
+    tlsVerify: true
+```
+
+## Kubernetes Manifests
+
+If you prefer raw Kubernetes manifests over Helm:
+
+### Deployment
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: phoenix
+  labels:
+    app: phoenix
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: phoenix
+  template:
+    metadata:
+      labels:
+        app: phoenix
+    spec:
+      containers:
+      - name: phoenix
+        image: arizephoenix/phoenix:version-13.5.0-nonroot
+        ports:
+        - containerPort: 6006
+          name: http
+        - containerPort: 4317
+          name: grpc
+        - containerPort: 9090
+          name: prometheus
+        env:
+        - name: PHOENIX_SQL_DATABASE_URL
+          value: postgresql://phoenix:phoenix@postgres:5432/phoenix
+        - name: PHOENIX_ENABLE_AUTH
+          value: "true"
+        - name: PHOENIX_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: phoenix-secret
+              key: secret
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 6006
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 6006
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+          requests:
+            cpu: 500m
+            memory: 1Gi
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: data
+        emptyDir: {}
+```
+
+### Service
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: phoenix
+  labels:
+    app: phoenix
+spec:
+  type: ClusterIP
+  ports:
+  - port: 6006
+    targetPort: 6006
+    protocol: TCP
+    name: http
+  - port: 4317
+    targetPort: 4317
+    protocol: TCP
+    name: grpc
+  - port: 9090
+    targetPort: 9090
+    protocol: TCP
+    name: prometheus
+  selector:
+    app: phoenix
+```
+
+### Ingress
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: phoenix
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - phoenix.example.com
+    secretName: phoenix-tls
+  rules:
+  - host: phoenix.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: phoenix
+            port:
+              number: 6006
+```
+
+## Scaling and High Availability
+
+### Horizontal Pod Autoscaling
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: phoenix
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: phoenix
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+```
+
+### Pod Disruption Budget
+
+```yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: phoenix
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: phoenix
+```
+
+## Monitoring
+
+### ServiceMonitor for Prometheus Operator
+
+```yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: phoenix
+  labels:
+    app: phoenix
+spec:
+  selector:
+    matchLabels:
+      app: phoenix
+  endpoints:
+  - port: prometheus
+    interval: 30s
+```
+
+## Troubleshooting
+
+### Check Pod Status
+
+```bash
+kubectl get pods -l app=phoenix
+kubectl describe pod <pod-name>
+kubectl logs <pod-name>
+```
+
+### Database Connection Issues
+
+```bash
+# Test database connectivity from pod
+kubectl exec -it <pod-name> -- sh
+telnet postgres 5432
+```
+
+### View Helm Values
+
+```bash
+helm get values phoenix
+helm get manifest phoenix
+```
+
+## Upgrading
+
+Upgrade Phoenix to a new version:
+
+```bash
+helm repo update
+helm upgrade phoenix oci://registry-1.docker.io/arizephoenix/phoenix-helm \
+  -f values.yaml
+```
+
+## Uninstalling
+
+Remove Phoenix from your cluster:
+
+```bash
+helm uninstall phoenix
+```
+
+<Note>
+  This does not delete PersistentVolumeClaims. Delete them manually if needed:
+  ```bash
+  kubectl delete pvc -l app=phoenix
+  ```
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/deployment/configuration">
+    Configure environment variables and settings
+  </Card>
+  <Card title="Security" icon="shield" href="/deployment/security">
+    Set up authentication and encryption
+  </Card>
+</CardGroup>

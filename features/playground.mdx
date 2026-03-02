@@ -1,0 +1,373 @@
+---
+title: Playground
+description: Interactive playground for prompt optimization with model comparison, parameter tuning, and trace replay capabilities
+---
+
+The Phoenix Playground provides an interactive environment for rapidly iterating on prompts, testing different models, and tuning generation parameters—all without writing code. It's designed for prompt engineering, quick experimentation, and debugging LLM behavior.
+
+## What is the Playground?
+
+The **Playground** is a web-based interface for:
+
+- **Prompt Engineering**: Craft and refine prompts with live feedback
+- **Model Comparison**: Test the same prompt across multiple models side-by-side
+- **Parameter Tuning**: Adjust temperature, top-p, max tokens, and other settings
+- **Trace Replay**: Load production traces and rerun them with different configurations
+- **Iteration Speed**: Get immediate feedback without writing or deploying code
+
+## Accessing the Playground
+
+The Playground is available in the Phoenix UI:
+
+<Steps>
+  <Step title="Launch Phoenix">
+    Start Phoenix and navigate to the UI:
+    
+    ```bash
+    phoenix serve
+    # Open http://localhost:6006
+    ```
+  </Step>
+  
+  <Step title="Open Playground">
+    Click "Playground" in the navigation menu or navigate to a specific project and click "Open in Playground".
+  </Step>
+  
+  <Step title="Configure your LLM">
+    Select your model provider (OpenAI, Anthropic, etc.) and enter API credentials if needed.
+  </Step>
+</Steps>
+
+## Key Features
+
+### Prompt Editor
+
+The Playground provides a rich editor for crafting prompts with:
+
+- **System/User/Assistant Messages**: Structure conversational prompts
+- **Template Variables**: Use `{{variable}}` syntax for dynamic content
+- **Multi-turn Conversations**: Build complex conversation flows
+- **Syntax Highlighting**: Clear visual formatting
+
+#### Example Prompt
+
+```text
+System: You are a helpful customer support agent for {{company_name}}.
+You should be professional but friendly.
+
+User: {{customer_query}}
+
+Assistant:
+```
+
+### Model Selection
+
+Choose from supported LLM providers:
+
+<CardGroup cols={2}>
+  <Card title="OpenAI" icon="robot">
+    GPT-4, GPT-4 Turbo, GPT-3.5 Turbo
+  </Card>
+  <Card title="Anthropic" icon="message">
+    Claude 3 Opus, Sonnet, Haiku
+  </Card>
+  <Card title="Azure OpenAI" icon="cloud">
+    Azure-hosted OpenAI models
+  </Card>
+  <Card title="Custom Providers" icon="plug">
+    Configure custom API endpoints
+  </Card>
+</CardGroup>
+
+### Parameter Tuning
+
+Adjust generation parameters interactively:
+
+**Temperature** (0.0 - 2.0)
+- Controls randomness in outputs
+- Lower = more deterministic
+- Higher = more creative/varied
+
+**Top P** (0.0 - 1.0)
+- Nucleus sampling threshold
+- Lower = more focused on likely tokens
+- Higher = broader token selection
+
+**Max Tokens**
+- Maximum length of generated response
+- Prevents runaway generation
+
+**Frequency/Presence Penalty** (OpenAI)
+- Reduce repetition in outputs
+- Frequency: penalize based on token frequency
+- Presence: penalize based on token presence
+
+**Stop Sequences**
+- Define custom stopping points
+- Useful for structured outputs
+
+### Side-by-Side Comparison
+
+Compare multiple model/parameter combinations simultaneously:
+
+<Steps>
+  <Step title="Add comparison column">
+    Click "Add Comparison" to create a new configuration column.
+  </Step>
+  
+  <Step title="Configure each variant">
+    Set different models or parameters for each column:
+    - Column 1: GPT-4 with temp 0.7
+    - Column 2: Claude 3 Sonnet with temp 0.7
+    - Column 3: GPT-4 with temp 0.2
+  </Step>
+  
+  <Step title="Run all variants">
+    Click "Run All" to execute the same prompt across all configurations.
+  </Step>
+  
+  <Step title="Compare outputs">
+    Review outputs side-by-side to identify quality, cost, and latency differences.
+  </Step>
+</Steps>
+
+### Trace Replay
+
+One of the most powerful features is **replaying production traces** in the Playground:
+
+<Steps>
+  <Step title="Find a trace">
+    Navigate to a trace in your project that you want to replay or debug.
+  </Step>
+  
+  <Step title="Open in Playground">
+    Click "Replay in Playground" from the trace detail view.
+  </Step>
+  
+  <Step title="Modify configuration">
+    The Playground loads with the exact prompt and inputs from the trace. Now you can:
+    - Edit the prompt
+    - Change the model
+    - Adjust parameters
+    - Modify input variables
+  </Step>
+  
+  <Step title="Rerun and compare">
+    Execute the modified configuration and compare against the original trace output.
+  </Step>
+</Steps>
+
+**Use Cases for Trace Replay**:
+- Debug problematic production outputs
+- Test prompt improvements on real user queries
+- Evaluate model upgrades (e.g., GPT-3.5 → GPT-4)
+- Investigate why certain inputs failed
+
+## Playground Configuration
+
+### API Keys
+
+Configure API keys for model providers:
+
+<Tabs>
+  <Tab title="OpenAI">
+    ```bash
+    # Set via environment variable
+    export OPENAI_API_KEY="sk-..."
+    ```
+    
+    Or enter directly in the Playground UI settings.
+  </Tab>
+  
+  <Tab title="Anthropic">
+    ```bash
+    export ANTHROPIC_API_KEY="sk-ant-..."
+    ```
+  </Tab>
+  
+  <Tab title="Azure OpenAI">
+    ```bash
+    export AZURE_OPENAI_API_KEY="..."
+    export AZURE_OPENAI_ENDPOINT="https://..."
+    export AZURE_OPENAI_API_VERSION="2024-02-15-preview"
+    ```
+  </Tab>
+</Tabs>
+
+### Custom Providers
+
+Add custom LLM providers through the Phoenix configuration:
+
+```python
+# In Phoenix configuration (helper code in src/phoenix/server/api/helpers/playground_clients.py)
+# Custom providers can be registered for use in the Playground
+```
+
+## Saving and Sharing
+
+### Save Prompt Configurations
+
+Prompt configurations from the Playground can be saved for reuse:
+
+<Steps>
+  <Step title="Name your configuration">
+    Give your prompt + parameters a descriptive name.
+  </Step>
+  
+  <Step title="Save as template">
+    Click "Save Template" to store in Phoenix.
+  </Step>
+  
+  <Step title="Load later">
+    Access saved templates from the Playground sidebar.
+  </Step>
+</Steps>
+
+### Export to Code
+
+Convert Playground configurations to production code:
+
+```python
+# Example: Export Playground config to OpenAI Python code
+from openai import OpenAI
+
+client = OpenAI()
+
+response = client.chat.completions.create(
+    model="gpt-4",
+    temperature=0.7,
+    max_tokens=500,
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What is Phoenix?"}
+    ]
+)
+```
+
+The Playground provides export options for common frameworks:
+- OpenAI Python SDK
+- Anthropic Python SDK
+- LangChain
+- LlamaIndex
+
+## Integration with Prompt Management
+
+The Playground integrates with Phoenix's [Prompt Management](/features/prompt-management) system:
+
+### Save to Prompt Registry
+
+Prompts created in the Playground can be saved as versioned prompts:
+
+<Steps>
+  <Step title="Finalize prompt">
+    Test and refine your prompt in the Playground.
+  </Step>
+  
+  <Step title="Save as versioned prompt">
+    Click "Save to Prompt Registry" and provide:
+    - Prompt name
+    - Version tag (e.g., "v1.0", "production")
+    - Description
+  </Step>
+  
+  <Step title="Use in production">
+    Load the saved prompt in your application code:
+    
+    ```python
+    import phoenix as px
+    
+    client = px.Client()
+    prompt = client.get_prompt(
+        name="customer_support_greeting",
+        tag="production"
+    )
+    ```
+  </Step>
+</Steps>
+
+### Load from Prompt Registry
+
+Bring existing versioned prompts into the Playground for testing:
+
+1. Click "Load Prompt" in the Playground
+2. Select from your saved prompts
+3. Choose a specific version or tag
+4. Test with different models or parameters
+
+## Playground for Experiments
+
+Use the Playground to rapidly prototype before running formal experiments:
+
+<Steps>
+  <Step title="Prototype in Playground">
+    Test your task logic interactively with various inputs.
+  </Step>
+  
+  <Step title="Validate across examples">
+    Manually try multiple dataset examples to verify behavior.
+  </Step>
+  
+  <Step title="Export to code">
+    Convert your Playground configuration to a task function.
+  </Step>
+  
+  <Step title="Run full experiment">
+    Execute the task systematically across your dataset:
+    
+    ```python
+    from phoenix.experiments import run_experiment
+    
+    def task(input):
+        # Logic refined in Playground
+        return process(input)
+    
+    result = run_experiment(
+        dataset=dataset,
+        task=task,
+        experiment_name="playground-prototype"
+    )
+    ```
+  </Step>
+</Steps>
+
+## Best Practices
+
+<Note>
+  **Iterate Quickly**: Use the Playground for fast iteration before committing to code or experiments.
+</Note>
+
+**Test Edge Cases**: Try unusual inputs, very long queries, and adversarial examples.
+
+**Compare Models**: Don't assume one model is always better—test on your specific use case.
+
+**Document Findings**: Save configurations that work well and note parameter settings.
+
+**Use Trace Replay**: When debugging production issues, always replay the trace in the Playground first.
+
+**Version Prompts**: Once you find a good prompt, save it to the Prompt Registry with proper versioning.
+
+## Keyboard Shortcuts
+
+Speed up your workflow with keyboard shortcuts:
+
+- `Cmd/Ctrl + Enter`: Run current configuration
+- `Cmd/Ctrl + S`: Save configuration
+- `Cmd/Ctrl + K`: Clear output
+- `Tab`: Navigate between fields
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Prompt Management" icon="pen" href="/features/prompt-management">
+    Version and manage prompts systematically
+  </Card>
+  <Card title="Experiments" icon="flask" href="/features/experiments">
+    Run systematic experiments on datasets
+  </Card>
+  <Card title="Tracing" icon="chart-network" href="/features/tracing">
+    Understand trace replay capabilities
+  </Card>
+  <Card title="Evaluation" icon="check" href="/features/evaluation">
+    Evaluate Playground outputs systematically
+  </Card>
+</CardGroup>

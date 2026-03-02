@@ -1,0 +1,318 @@
+---
+title: Traces API
+description: API endpoints for managing traces and trace annotations
+---
+
+The Traces API allows you to send trace data to Phoenix and manage trace annotations. Traces are automatically ingested using OpenTelemetry Protocol (OTLP) or can be annotated for evaluation purposes.
+
+## Endpoints
+
+### Send Traces
+
+<Note>
+This endpoint is primarily used by OpenTelemetry SDKs and the Phoenix SDK. It accepts OTLP trace data in Protocol Buffer format.
+</Note>
+
+```http
+POST /v1/traces
+```
+
+Send trace data to Phoenix using the OpenTelemetry Protocol.
+
+#### Headers
+
+<ParamField header="Content-Type" type="string" required>
+  Must be `application/x-protobuf`
+</ParamField>
+
+<ParamField header="Content-Encoding" type="string">
+  Optional compression: `gzip` or `deflate`
+</ParamField>
+
+#### Request Body
+
+Binary Protocol Buffer data conforming to the OTLP `ExportTraceServiceRequest` schema.
+
+#### Response
+
+<ResponseField name="status" type="number">
+  200 on success
+</ResponseField>
+
+Returns an `ExportTraceServiceResponse` in Protocol Buffer format.
+
+#### Example
+
+```python
+import requests
+import gzip
+from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
+
+# Create OTLP trace request
+request = ExportTraceServiceRequest()
+# ... populate with trace data ...
+
+# Serialize and compress
+body = gzip.compress(request.SerializeToString())
+
+response = requests.post(
+    "http://localhost:6006/v1/traces",
+    data=body,
+    headers={
+        "Content-Type": "application/x-protobuf",
+        "Content-Encoding": "gzip"
+    }
+)
+```
+
+<Warning>
+**Capacity Limits**: The server will return HTTP 503 if the span processing queue is full. Implement retry logic with backoff for production systems.
+</Warning>
+
+---
+
+### Create Trace Annotations
+
+```http
+POST /v1/trace_annotations
+```
+
+Create or update annotations (labels, scores, metadata) for traces.
+
+#### Query Parameters
+
+<ParamField query="sync" type="boolean" default="false">
+  If `true`, the request is processed synchronously and returns the created annotation IDs. If `false`, the request is queued for asynchronous processing.
+</ParamField>
+
+#### Request Body
+
+<ParamField body="data" type="array" required>
+  Array of trace annotation objects
+  
+  <Expandable title="Trace Annotation Object">
+    <ParamField body="trace_id" type="string" required>
+      The OpenTelemetry trace ID (hex string)
+    </ParamField>
+    
+    <ParamField body="name" type="string" required>
+      Name of the annotation (e.g., "correctness", "relevance")
+    </ParamField>
+    
+    <ParamField body="annotator_kind" type="string" required>
+      Type of annotator: `"LLM"` or `"HUMAN"`
+    </ParamField>
+    
+    <ParamField body="result" type="object">
+      Annotation result containing score, label, or explanation
+      
+      <ParamField body="score" type="number">
+        Numeric score (e.g., 0.95)
+      </ParamField>
+      
+      <ParamField body="label" type="string">
+        Categorical label (e.g., "correct", "incorrect")
+      </ParamField>
+      
+      <ParamField body="explanation" type="string">
+        Text explanation for the annotation
+      </ParamField>
+    </ParamField>
+    
+    <ParamField body="metadata" type="object">
+      Additional metadata as key-value pairs
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### Response
+
+<ResponseField name="data" type="array">
+  Array of created annotation objects (only returned when `sync=true`)
+  
+  <Expandable title="properties">
+    <ResponseField name="id" type="string">
+      Global ID of the created trace annotation
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### Example
+
+<CodeGroup>
+```python Python
+import requests
+
+url = "http://localhost:6006/v1/trace_annotations"
+headers = {
+    "Authorization": "Bearer your-api-key",
+    "Content-Type": "application/json"
+}
+
+data = {
+    "data": [
+        {
+            "trace_id": "abc123def456",
+            "name": "correctness",
+            "annotator_kind": "LLM",
+            "result": {
+                "score": 0.95,
+                "label": "correct",
+                "explanation": "The response accurately answers the question"
+            },
+            "metadata": {
+                "model": "gpt-4",
+                "temperature": 0.0
+            }
+        }
+    ]
+}
+
+response = requests.post(url, json=data, headers=headers, params={"sync": True})
+print(response.json())
+```
+
+```bash cURL
+curl -X POST "http://localhost:6006/v1/trace_annotations?sync=true" \
+  -H "Authorization: Bearer your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data": [
+      {
+        "trace_id": "abc123def456",
+        "name": "correctness",
+        "annotator_kind": "LLM",
+        "result": {
+          "score": 0.95,
+          "label": "correct"
+        }
+      }
+    ]
+  }'
+```
+
+```javascript JavaScript
+const response = await fetch('http://localhost:6006/v1/trace_annotations?sync=true', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer your-api-key',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    data: [
+      {
+        trace_id: 'abc123def456',
+        name: 'correctness',
+        annotator_kind: 'LLM',
+        result: {
+          score: 0.95,
+          label: 'correct'
+        }
+      }
+    ]
+  })
+});
+
+const data = await response.json();
+console.log(data);
+```
+</CodeGroup>
+
+---
+
+### Delete Trace
+
+```http
+DELETE /v1/traces/{trace_identifier}
+```
+
+Delete an entire trace by its identifier.
+
+<Warning>
+This operation is permanent and will delete all spans in the trace and their associated data.
+</Warning>
+
+#### Path Parameters
+
+<ParamField path="trace_identifier" type="string" required>
+  The trace identifier - either a Relay Global ID or an OpenTelemetry trace_id (hex string)
+</ParamField>
+
+#### Response
+
+Returns HTTP 204 (No Content) on success.
+
+#### Example
+
+<CodeGroup>
+```python Python
+import requests
+
+url = "http://localhost:6006/v1/traces/abc123def456"
+headers = {"Authorization": "Bearer your-api-key"}
+
+response = requests.delete(url, headers=headers)
+print(response.status_code)  # 204
+```
+
+```bash cURL
+curl -X DELETE "http://localhost:6006/v1/traces/abc123def456" \
+  -H "Authorization: Bearer your-api-key"
+```
+</CodeGroup>
+
+---
+
+## Using the Phoenix SDK
+
+For easier trace management, use the Phoenix Python SDK:
+
+```python
+from phoenix.trace import using_project
+from openinference.instrumentation import using_attributes
+
+# Automatically instrument your application
+with using_project("my-project"):
+    # Your application code here
+    # Traces are automatically sent to Phoenix
+    pass
+```
+
+The SDK handles:
+- Automatic OTLP trace serialization
+- Connection management and retries
+- Batch processing for efficiency
+- Project name configuration
+
+See the [Tracing](/tracing/overview) documentation for complete SDK usage.
+
+## Error Handling
+
+<ResponseField name="404" type="error">
+  Trace not found (for DELETE operations)
+</ResponseField>
+
+<ResponseField name="422" type="error">
+  Invalid request body or trace data
+</ResponseField>
+
+<ResponseField name="503" type="error">
+  Server at capacity - the span processing queue is full. Retry with exponential backoff.
+</ResponseField>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Async Mode" icon="bolt">
+    Use `sync=false` (default) for trace annotations to avoid blocking on database writes
+  </Card>
+  <Card title="Batch Annotations" icon="layer-group">
+    Send multiple trace annotations in a single request to reduce HTTP overhead
+  </Card>
+  <Card title="Handle 503 Errors" icon="triangle-exclamation">
+    Implement retry logic with exponential backoff when the server is at capacity
+  </Card>
+  <Card title="Use Compression" icon="file-zipper">
+    Enable gzip compression for large trace payloads to reduce bandwidth
+  </Card>
+</CardGroup>

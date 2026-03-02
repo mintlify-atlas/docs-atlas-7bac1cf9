@@ -1,0 +1,325 @@
+---
+title: "Anthropic Integration"
+description: Instrument Anthropic Claude API calls with Phoenix for complete observability including streaming and tool use
+---
+
+Phoenix provides auto-instrumentation for the [Anthropic Python SDK](https://github.com/anthropics/anthropic-sdk-python) and [Anthropic TypeScript SDK](https://github.com/anthropics/anthropic-sdk-typescript), allowing you to trace all calls to Claude models.
+
+Anthropic's Claude models are state-of-the-art LLMs with extended context windows and strong performance on reasoning tasks. Phoenix makes it easy to observe Claude's behavior in production.
+
+## Installation
+
+<CodeGroup>
+```bash Python
+pip install openinference-instrumentation-anthropic anthropic
+```
+
+```bash TypeScript
+npm install @arizeai/openinference-instrumentation-anthropic @anthropic-ai/sdk
+```
+</CodeGroup>
+
+## Setup
+
+<Steps>
+  <Step title="Set your Anthropic API key">
+    <CodeGroup>
+    ```bash Python
+    export ANTHROPIC_API_KEY=sk-ant-...
+    ```
+    
+    ```bash TypeScript
+    export ANTHROPIC_API_KEY=sk-ant-...
+    ```
+    </CodeGroup>
+  </Step>
+  
+  <Step title="Register Phoenix tracer">
+    <CodeGroup>
+    ```python Python
+    from phoenix.otel import register
+    
+    # Configure the Phoenix tracer
+    tracer_provider = register(
+      project_name="my-llm-app",  # Default is 'default'
+      auto_instrument=True  # Auto-instrument based on installed packages
+    )
+    ```
+    
+    ```typescript TypeScript
+    import { register } from "@arizeai/phoenix-otel";
+    import { AnthropicInstrumentation } from "@arizeai/openinference-instrumentation-anthropic";
+    
+    const tracerProvider = register({
+      projectName: "my-llm-app",
+    });
+    
+    // Instrument Anthropic
+    const instrumentation = new AnthropicInstrumentation();
+    instrumentation.manuallyInstrument(tracerProvider);
+    ```
+    </CodeGroup>
+  </Step>
+  
+  <Step title="Use Anthropic as normal">
+    <CodeGroup>
+    ```python Python
+    import anthropic
+    
+    client = anthropic.Anthropic()
+    
+    message = client.messages.create(
+        model="claude-3-5-sonnet-20240620",
+        max_tokens=1000,
+        temperature=0,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Why is the ocean salty?"
+                    }
+                ]
+            }
+        ]
+    )
+    print(message.content)
+    ```
+    
+    ```typescript TypeScript
+    import Anthropic from "@anthropic-ai/sdk";
+    
+    const client = new Anthropic();
+    
+    const message = await client.messages.create({
+      model: "claude-3-5-sonnet-20240620",
+      max_tokens: 1000,
+      temperature: 0,
+      messages: [
+        {
+          role: "user",
+          content: "Why is the ocean salty?"
+        }
+      ]
+    });
+    console.log(message.content);
+    ```
+    </CodeGroup>
+  </Step>
+</Steps>
+
+## What Gets Traced
+
+The Anthropic instrumentation automatically captures:
+
+- **Messages**: Model, system prompt, messages, parameters
+- **Streaming**: Real-time token streaming
+- **Tool Use**: Tool definitions, tool calls, results
+- **Token Usage**: Input and output token counts
+- **Errors**: API errors, rate limits, validation errors
+
+## Advanced Examples
+
+### Streaming Responses
+
+<CodeGroup>
+```python Python
+import anthropic
+
+client = anthropic.Anthropic()
+
+with client.messages.stream(
+    model="claude-3-5-sonnet-20240620",
+    max_tokens=1024,
+    messages=[
+        {"role": "user", "content": "Write a short poem about AI observability"}
+    ],
+) as stream:
+    for text in stream.text_stream:
+        print(text, end="", flush=True)
+
+# Phoenix captures the full streamed response
+```
+
+```typescript TypeScript
+import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic();
+
+const stream = await client.messages.create({
+  model: "claude-3-5-sonnet-20240620",
+  max_tokens: 1024,
+  messages: [{role: "user", content: "Write a short poem about AI observability"}],
+  stream: true,
+});
+
+for await (const event of stream) {
+  if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+    process.stdout.write(event.delta.text);
+  }
+}
+```
+</CodeGroup>
+
+### Tool Use (Function Calling)
+
+<CodeGroup>
+```python Python
+import anthropic
+import json
+
+client = anthropic.Anthropic()
+
+# Define tools
+tools = [
+    {
+        "name": "get_weather",
+        "description": "Get the current weather in a given location",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string",
+                    "description": "The city and state, e.g. San Francisco, CA"
+                },
+                "unit": {
+                    "type": "string",
+                    "enum": ["celsius", "fahrenheit"],
+                    "description": "The unit of temperature"
+                }
+            },
+            "required": ["location"]
+        }
+    }
+]
+
+message = client.messages.create(
+    model="claude-3-5-sonnet-20240620",
+    max_tokens=1024,
+    tools=tools,
+    messages=[{"role": "user", "content": "What's the weather like in San Francisco?"}]
+)
+
+# Phoenix captures tool definitions and calls
+if message.stop_reason == "tool_use":
+    for content in message.content:
+        if content.type == "tool_use":
+            print(f"Tool: {content.name}")
+            print(f"Input: {content.input}")
+```
+
+```typescript TypeScript
+import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic();
+
+const tools = [
+  {
+    name: "get_weather",
+    description: "Get the current weather in a given location",
+    input_schema: {
+      type: "object",
+      properties: {
+        location: {
+          type: "string",
+          description: "The city and state, e.g. San Francisco, CA"
+        },
+        unit: {
+          type: "string",
+          enum: ["celsius", "fahrenheit"],
+          description: "The unit of temperature"
+        }
+      },
+      required: ["location"]
+    }
+  }
+];
+
+const message = await client.messages.create({
+  model: "claude-3-5-sonnet-20240620",
+  max_tokens: 1024,
+  tools: tools,
+  messages: [{role: "user", content: "What's the weather like in San Francisco?"}]
+});
+
+if (message.stop_reason === "tool_use") {
+  for (const content of message.content) {
+    if (content.type === "tool_use") {
+      console.log(`Tool: ${content.name}`);
+      console.log(`Input: ${JSON.stringify(content.input)}`);
+    }
+  }
+}
+```
+</CodeGroup>
+
+### System Prompts and Multi-turn Conversations
+
+<CodeGroup>
+```python Python
+import anthropic
+
+client = anthropic.Anthropic()
+
+message = client.messages.create(
+    model="claude-3-5-sonnet-20240620",
+    max_tokens=1024,
+    system="You are a helpful AI assistant specialized in Python programming.",
+    messages=[
+        {"role": "user", "content": "How do I read a CSV file?"},
+        {"role": "assistant", "content": "You can use the pandas library..."},
+        {"role": "user", "content": "What if I don't have pandas?"}
+    ]
+)
+
+print(message.content[0].text)
+```
+
+```typescript TypeScript
+import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic();
+
+const message = await client.messages.create({
+  model: "claude-3-5-sonnet-20240620",
+  max_tokens: 1024,
+  system: "You are a helpful AI assistant specialized in Python programming.",
+  messages: [
+    {role: "user", content: "How do I read a CSV file?"},
+    {role: "assistant", content: "You can use the pandas library..."},
+    {role: "user", content: "What if I don't have pandas?"}
+  ]
+});
+
+console.log(message.content[0].text);
+```
+</CodeGroup>
+
+## Observability in Phoenix
+
+Once instrumented, you can:
+
+- **View all Claude API calls** with full message history
+- **Monitor token usage** for cost tracking
+- **Track response latency** and streaming performance
+- **Inspect tool use** patterns and tool call sequences
+- **Debug system prompts** and conversation context
+- **Analyze error patterns** and rate limiting
+
+## Resources
+
+<CardGroup cols={2}>
+  <Card title="Example Messages" icon="message" href="https://github.com/Arize-ai/openinference/blob/main/python/instrumentation/openinference-instrumentation-anthropic/examples/sync_messages.py">
+    Basic message example
+  </Card>
+  <Card title="Tool Calling Example" icon="wrench" href="https://github.com/Arize-ai/openinference/blob/main/python/instrumentation/openinference-instrumentation-anthropic/examples/multiple_tool_calling.py">
+    Multiple tool calls
+  </Card>
+  <Card title="OpenInference Package" icon="github" href="https://github.com/Arize-ai/openinference/tree/main/python/instrumentation/openinference-instrumentation-anthropic">
+    View source code
+  </Card>
+  <Card title="Anthropic Documentation" icon="book" href="https://docs.anthropic.com/">
+    Official API docs
+  </Card>
+</CardGroup>

@@ -1,0 +1,501 @@
+---
+title: Authentication Setup
+description: Configure user management, SSO, and access control for Phoenix Cloud
+---
+
+Configure authentication and user management for Phoenix Cloud deployments.
+
+## Overview
+
+Phoenix Cloud supports multiple authentication methods:
+
+- **Email/Password**: Standard username and password authentication
+- **OAuth2/OIDC**: Single Sign-On with Google, GitHub, Microsoft, and custom providers
+- **SAML** (Enterprise): SAML 2.0 for enterprise identity providers
+- **API Keys**: Programmatic access for applications
+
+## User Management
+
+### Creating Users
+
+#### Self-Service Sign-Up
+
+Users can sign up at [app.phoenix.arize.com](https://app.phoenix.arize.com):
+
+1. Click "Sign Up"
+2. Choose authentication method (Email, Google, GitHub)
+3. Complete verification
+4. Join or create a workspace
+
+#### Admin-Provisioned Users
+
+Admins can invite users via the UI:
+
+<Steps>
+  <Step title="Navigate to Settings">
+    Click Settings > Users
+  </Step>
+  
+  <Step title="Invite user">
+    Click "Invite User" and enter email address
+  </Step>
+  
+  <Step title="Assign role">
+    Select role (Admin, Member, or Viewer)
+  </Step>
+  
+  <Step title="Send invitation">
+    User receives email with invitation link
+  </Step>
+</Steps>
+
+### User Roles
+
+<ParamField path="ADMIN" type="role">
+  Full access to all resources and settings:
+  - Manage users and roles
+  - Configure authentication
+  - Manage API keys
+  - Create and delete projects
+  - Full read/write access to all data
+</ParamField>
+
+<ParamField path="MEMBER" type="role">
+  Standard user access:
+  - Read/write access to projects
+  - Create datasets and experiments
+  - Run evaluations
+  - Create personal API keys
+  - Cannot manage users or settings
+</ParamField>
+
+<ParamField path="VIEWER" type="role">
+  Read-only access:
+  - View traces and evaluations
+  - View datasets and experiments
+  - Cannot modify data
+  - Cannot create API keys
+</ParamField>
+
+### Deactivating Users
+
+Admins can deactivate users:
+
+1. Navigate to Settings > Users
+2. Click user menu > Deactivate
+3. Confirm deactivation
+
+Deactivated users:
+- Cannot log in
+- API keys are revoked
+- Data remains in system
+
+## Single Sign-On (SSO)
+
+### Google OAuth
+
+Enable Google SSO for your workspace:
+
+<Steps>
+  <Step title="Configure in Phoenix Cloud">
+    Navigate to Settings > Authentication > OAuth Providers
+  </Step>
+  
+  <Step title="Enable Google">
+    Toggle "Google OAuth" to enabled
+  </Step>
+  
+  <Step title="Configure settings">
+    - **Auto-provision users**: Allow users to sign up automatically
+    - **Restrict domains**: Limit to specific email domains (e.g., `@company.com`)
+    - **Default role**: Set role for new users (Viewer, Member)
+  </Step>
+</Steps>
+
+### GitHub OAuth
+
+Enable GitHub SSO:
+
+<Steps>
+  <Step title="Create OAuth App">
+    Create an OAuth App in GitHub:
+    
+    1. Go to Settings > Developer settings > OAuth Apps
+    2. Click "New OAuth App"
+    3. Set Authorization callback URL:
+       ```
+       https://app.phoenix.arize.com/auth/github/callback
+       ```
+  </Step>
+  
+  <Step title="Configure in Phoenix">
+    Navigate to Settings > Authentication > OAuth Providers
+    
+    Enter:
+    - Client ID from GitHub
+    - Client Secret from GitHub
+  </Step>
+  
+  <Step title="Enable and test">
+    Toggle "GitHub OAuth" to enabled and test login
+  </Step>
+</Steps>
+
+### Microsoft Entra ID (Azure AD)
+
+Configure Microsoft SSO:
+
+<Steps>
+  <Step title="Register application">
+    Register an app in Azure AD:
+    
+    1. Go to Azure Portal > App registrations
+    2. Click "New registration"
+    3. Set Redirect URI:
+       ```
+       https://app.phoenix.arize.com/auth/microsoft/callback
+       ```
+  </Step>
+  
+  <Step title="Configure API permissions">
+    Add permissions:
+    - `User.Read` (Microsoft Graph)
+    - `email`
+    - `openid`
+    - `profile`
+  </Step>
+  
+  <Step title="Create client secret">
+    Generate a client secret in "Certificates & secrets"
+  </Step>
+  
+  <Step title="Configure in Phoenix">
+    Navigate to Settings > Authentication > OAuth Providers
+    
+    Enter:
+    - Tenant ID
+    - Client ID
+    - Client Secret
+  </Step>
+</Steps>
+
+### SAML 2.0 (Enterprise)
+
+Configure SAML for enterprise identity providers (Okta, OneLogin, etc.):
+
+<Note>
+  SAML SSO is available on Enterprise plans. [Contact Sales](https://phoenix.arize.com/contact) to enable.
+</Note>
+
+<Steps>
+  <Step title="Get SAML metadata">
+    From Phoenix Cloud:
+    
+    Navigate to Settings > Authentication > SAML
+    
+    Copy:
+    - **Entity ID**: `https://app.phoenix.arize.com/saml/metadata`
+    - **ACS URL**: `https://app.phoenix.arize.com/saml/acs`
+    - **Metadata URL**: `https://app.phoenix.arize.com/saml/metadata.xml`
+  </Step>
+  
+  <Step title="Configure IdP">
+    In your identity provider (Okta, OneLogin, etc.):
+    
+    1. Create new SAML application
+    2. Set Single Sign-On URL to ACS URL
+    3. Set Audience URI to Entity ID
+    4. Configure attribute mappings:
+       - `email` → user email
+       - `firstName` → user first name
+       - `lastName` → user last name
+       - `groups` (optional) → user groups
+  </Step>
+  
+  <Step title="Configure Phoenix">
+    In Phoenix Cloud (Settings > Authentication > SAML):
+    
+    Enter:
+    - **IdP Entity ID**: From your IdP metadata
+    - **IdP SSO URL**: Single Sign-On URL from IdP
+    - **IdP Certificate**: X.509 certificate from IdP
+  </Step>
+  
+  <Step title="Enable and test">
+    Enable SAML and test with a user account
+  </Step>
+</Steps>
+
+### Custom OIDC Provider
+
+Connect any OIDC-compliant identity provider:
+
+<Steps>
+  <Step title="Get OIDC configuration">
+    From your identity provider, get:
+    - OIDC Discovery URL (`.well-known/openid-configuration`)
+    - Client ID
+    - Client Secret
+  </Step>
+  
+  <Step title="Configure in Phoenix">
+    Navigate to Settings > Authentication > Custom OIDC
+    
+    Enter:
+    ```yaml
+    Provider Name: Custom IDP
+    Discovery URL: https://idp.company.com/.well-known/openid-configuration
+    Client ID: phoenix-client-id
+    Client Secret: [secret]
+    Scopes: openid email profile groups
+    ```
+  </Step>
+  
+  <Step title="Map attributes">
+    Configure attribute mapping:
+    - Email claim: `email`
+    - Name claim: `name` or `preferred_username`
+    - Groups claim: `groups` (optional)
+  </Step>
+</Steps>
+
+## Group-Based Access Control
+
+Map identity provider groups to Phoenix roles:
+
+### Configure Group Mappings
+
+Navigate to Settings > Authentication > Group Mappings
+
+```yaml
+Group Mappings:
+  - IdP Group: "Phoenix-Admins"
+    Phoenix Role: ADMIN
+  
+  - IdP Group: "Phoenix-Users"
+    Phoenix Role: MEMBER
+  
+  - IdP Group: "Phoenix-Viewers"
+    Phoenix Role: VIEWER
+```
+
+### Auto-Provisioning with Groups
+
+When group mappings are configured:
+
+1. User logs in via SSO
+2. Phoenix reads group claims from IdP
+3. User is assigned role based on group membership
+4. User account is auto-created (if enabled)
+5. Role is updated on each login
+
+<Note>
+  Users must belong to at least one mapped group to access Phoenix.
+</Note>
+
+## Multi-Factor Authentication
+
+### Enforcing MFA
+
+Admins can require MFA for all users:
+
+<Steps>
+  <Step title="Enable MFA policy">
+    Navigate to Settings > Security > MFA
+    
+    Toggle "Require MFA for all users"
+  </Step>
+  
+  <Step title="Set grace period">
+    Configure grace period (e.g., 7 days) for users to set up MFA
+  </Step>
+  
+  <Step title="Notify users">
+    Users receive email notification to set up MFA
+  </Step>
+</Steps>
+
+### Setting Up MFA (User)
+
+Users can enable MFA:
+
+1. Click profile icon > Account Settings
+2. Navigate to Security
+3. Click "Enable MFA"
+4. Scan QR code with authenticator app (Google Authenticator, Authy, etc.)
+5. Enter verification code
+6. Save recovery codes
+
+## Session Management
+
+### Session Settings
+
+Configure session timeouts:
+
+<ParamField path="Session Timeout" type="duration" default="7 days">
+  Maximum session duration before re-authentication required
+</ParamField>
+
+<ParamField path="Idle Timeout" type="duration" default="24 hours">
+  Session expires after this period of inactivity
+</ParamField>
+
+<ParamField path="Remember Me" type="boolean" default="true">
+  Allow users to stay logged in for extended periods
+</ParamField>
+
+### Active Sessions
+
+Users can view and revoke active sessions:
+
+1. Navigate to Account Settings > Security > Active Sessions
+2. View list of active sessions with:
+   - Device/browser information
+   - IP address
+   - Last activity time
+3. Click "Revoke" to end a session
+
+## Access Logs
+
+Audit user authentication and access:
+
+### Viewing Access Logs
+
+Admins can view access logs:
+
+Navigate to Settings > Security > Access Logs
+
+Logs include:
+- Login attempts (successful and failed)
+- Session creation/termination
+- API key usage
+- Permission changes
+- Resource access
+
+### Log Retention
+
+- **Free Tier**: 7 days
+- **Pro Tier**: 30 days
+- **Enterprise Tier**: 90 days (configurable up to 365 days)
+
+### Exporting Logs
+
+Export access logs for compliance:
+
+```bash
+curl -H "Authorization: Bearer YOUR_API_KEY" \
+  "https://app.phoenix.arize.com/api/v1/audit-logs?start=2024-01-01&end=2024-01-31" \
+  > audit-logs.json
+```
+
+## Password Policies
+
+### Default Policy
+
+- Minimum length: 8 characters
+- Must include: uppercase, lowercase, number
+- Cannot be common password
+- Cannot match username
+
+### Strong Password Policy (Enterprise)
+
+Enable enhanced password requirements:
+
+- Minimum length: 12 characters
+- Must include: uppercase, lowercase, number, special character
+- Cannot reuse last 5 passwords
+- Expires after 90 days
+- Account lockout after 5 failed attempts
+
+Configure in Settings > Security > Password Policy
+
+## Account Recovery
+
+### Password Reset
+
+Users can reset passwords:
+
+1. Click "Forgot Password" on login page
+2. Enter email address
+3. Check email for reset link (valid for 1 hour)
+4. Set new password
+
+### Account Lockout
+
+After 5 failed login attempts:
+- Account is locked for 30 minutes
+- User receives email notification
+- Admin can manually unlock in Settings > Users
+
+## Best Practices
+
+<Steps>
+  <Step title="Use SSO for corporate users">
+    Configure SSO with your identity provider instead of managing passwords
+  </Step>
+  
+  <Step title="Enforce MFA for admins">
+    Require MFA for all admin users at minimum
+  </Step>
+  
+  <Step title="Implement group-based access">
+    Use IdP groups to automatically assign roles
+  </Step>
+  
+  <Step title="Review access logs regularly">
+    Monitor for suspicious login patterns or unauthorized access
+  </Step>
+  
+  <Step title="Set session timeouts">
+    Configure appropriate session timeouts for your security requirements
+  </Step>
+  
+  <Step title="Provision users via SSO">
+    Enable auto-provisioning to reduce manual user management
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### SSO Login Fails
+
+Check common issues:
+
+1. **Redirect URI mismatch**: Verify callback URL in IdP matches Phoenix
+2. **Clock skew**: Ensure IdP and Phoenix clocks are synchronized
+3. **Certificate expired**: Check IdP certificate validity
+4. **Missing claims**: Verify IdP sends required claims (email, name)
+
+### User Cannot Access Resources
+
+Verify:
+
+1. User role assignment (Settings > Users)
+2. Group mappings (if using group-based access)
+3. Project permissions
+4. Account is not deactivated
+
+### MFA Not Working
+
+Common fixes:
+
+1. Check time synchronization on authenticator app
+2. Use recovery code if codes don't work
+3. Re-scan QR code to re-register device
+4. Contact admin to reset MFA
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="API Keys" icon="key" href="/deployment/api-keys">
+    Manage API keys for programmatic access
+  </Card>
+  
+  <Card title="Security" icon="shield" href="/deployment/security">
+    Configure encryption and network security
+  </Card>
+  
+  <Card title="Phoenix Cloud" icon="cloud" href="/deployment/phoenix-cloud">
+    Learn more about Phoenix Cloud features
+  </Card>
+</CardGroup>

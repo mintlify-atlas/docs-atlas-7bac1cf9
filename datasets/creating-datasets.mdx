@@ -1,0 +1,340 @@
+---
+title: Creating Datasets
+description: Learn how to create datasets from traces, uploads, and various data sources
+---
+
+Phoenix provides multiple ways to create datasets, allowing you to build evaluation sets from production traces, existing data, or manual curation.
+
+## Creating from Lists
+
+The simplest way to create a dataset is from lists of inputs and outputs:
+
+```python
+from phoenix.client import Client
+
+client = Client()
+
+dataset = client.datasets.create_dataset(
+    name="customer-support-qa",
+    inputs=[
+        {"question": "How do I reset my password?"},
+        {"question": "What is your return policy?"},
+        {"question": "How do I track my order?"},
+    ],
+    outputs=[
+        {"answer": "Click 'Forgot Password' on the login page..."},
+        {"answer": "We accept returns within 30 days..."},
+        {"answer": "You can track your order in the Orders section..."},
+    ],
+    metadata=[
+        {"category": "account", "priority": "high"},
+        {"category": "policy", "priority": "medium"},
+        {"category": "order", "priority": "high"},
+    ],
+    dataset_description="Common customer support questions and answers"
+)
+
+print(f"Created dataset {dataset.name} with {len(dataset)} examples")
+```
+
+## Creating from DataFrames
+
+For larger datasets, use pandas DataFrames:
+
+```python
+import pandas as pd
+from phoenix.client import Client
+
+client = Client()
+
+# Create a DataFrame
+df = pd.DataFrame({
+    "user_query": [
+        "What is machine learning?",
+        "Explain neural networks",
+        "What is deep learning?"
+    ],
+    "expected_response": [
+        "Machine learning is a subset of AI...",
+        "Neural networks are computational models...",
+        "Deep learning uses multi-layer neural networks..."
+    ],
+    "difficulty": ["beginner", "intermediate", "intermediate"],
+    "topic": ["basics", "architecture", "advanced"]
+})
+
+# Create dataset from DataFrame
+dataset = client.datasets.create_dataset(
+    name="ml-education-qa",
+    dataframe=df,
+    input_keys=["user_query"],
+    output_keys=["expected_response"],
+    metadata_keys=["difficulty", "topic"],
+    dataset_description="Educational Q&A about machine learning"
+)
+```
+
+## Creating from CSV Files
+
+Load datasets directly from CSV files:
+
+```python
+from pathlib import Path
+from phoenix.client import Client
+
+client = Client()
+
+dataset = client.datasets.create_dataset(
+    name="qa-from-csv",
+    csv_file_path=Path("./data/qa_dataset.csv"),
+    input_keys=["question"],
+    output_keys=["answer"],
+    metadata_keys=["source", "verified"],
+)
+```
+
+**CSV Format Example:**
+
+```csv
+question,answer,source,verified
+"What is AI?","Artificial Intelligence is...","expert_review",true
+"What is ML?","Machine Learning is...","documentation",true
+```
+
+## Creating from Production Traces
+
+One of the most powerful features is creating datasets from real production traces:
+
+<Steps>
+  <Step title="Query Traces">
+    Retrieve spans from your production application:
+    
+    ```python
+    from datetime import datetime, timezone, timedelta
+    from phoenix.client import Client
+    
+    client = Client()
+    
+    # Get spans from the last 7 days
+    end_time = datetime.now(timezone.utc)
+    start_time = end_time - timedelta(days=7)
+    
+    spans_df = client.spans.get_spans_dataframe(
+        project_identifier="production-chatbot",
+        start_time=start_time,
+        end_time=end_time,
+        limit=1000
+    )
+    
+    print(f"Retrieved {len(spans_df)} spans")
+    ```
+  </Step>
+  
+  <Step title="Filter and Prepare Data">
+    Select relevant spans and prepare the dataset:
+    
+    ```python
+    import json
+    
+    # Filter for high-quality interactions
+    # (e.g., where users gave positive feedback)
+    quality_spans = spans_df[
+        (spans_df['attributes.user_feedback.score'] >= 4.0) &
+        (spans_df['name'] == 'llm_inference')
+    ].copy()
+    
+    # Parse JSON strings and extract data
+    def parse_json_value(value):
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except json.JSONDecodeError:
+                return value
+        return value
+    
+    # Extract inputs and outputs
+    quality_spans['question'] = quality_spans['attributes.input.value'].apply(
+        lambda x: parse_json_value(x).get('question', x) 
+        if isinstance(parse_json_value(x), dict) else x
+    )
+    quality_spans['answer'] = quality_spans['attributes.output.value'].apply(
+        lambda x: parse_json_value(x).get('answer', x)
+        if isinstance(parse_json_value(x), dict) else x
+    )
+    
+    # Add metadata from span attributes
+    quality_spans['model'] = quality_spans['attributes.llm.model_name']
+    quality_spans['latency_ms'] = quality_spans['latency_ms']
+    ```
+  </Step>
+  
+  <Step title="Create Dataset with Span Links">
+    Create the dataset and preserve trace associations:
+    
+    ```python
+    # Reset index if context.span_id is the index
+    if quality_spans.index.name == 'context.span_id':
+        quality_spans = quality_spans.reset_index()
+    
+    # Create dataset with span associations
+    dataset = client.datasets.create_dataset(
+        name="high-quality-responses",
+        dataframe=quality_spans,
+        input_keys=["question"],
+        output_keys=["answer"],
+        metadata_keys=["model", "latency_ms"],
+        span_id_key="context.span_id",  # Links examples to original traces
+        dataset_description="High-quality responses from production (feedback >= 4.0)"
+    )
+    
+    print(f"Created dataset with {len(dataset)} examples linked to traces")
+    ```
+  </Step>
+</Steps>
+
+## Creating with Dataset Splits
+
+Organize examples into train/validation/test splits:
+
+```python
+import pandas as pd
+from phoenix.client import Client
+
+client = Client()
+
+df = pd.DataFrame({
+    "question": ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6"],
+    "answer": ["A1", "A2", "A3", "A4", "A5", "A6"],
+    "split": ["train", "train", "train", "train", "validation", "test"]
+})
+
+dataset = client.datasets.create_dataset(
+    name="ml-dataset-with-splits",
+    dataframe=df,
+    input_keys=["question"],
+    output_keys=["answer"],
+    split_keys=["split"],  # Automatically assign examples to splits
+)
+
+# Later, retrieve only specific splits
+train_data = client.datasets.get_dataset(
+    dataset="ml-dataset-with-splits",
+    splits=["train"]
+)
+
+val_data = client.datasets.get_dataset(
+    dataset="ml-dataset-with-splits",
+    splits=["validation"]
+)
+```
+
+## Creating with the Examples Format
+
+Use the structured examples format for maximum control:
+
+```python
+from phoenix.client import Client
+
+client = Client()
+
+examples = [
+    {
+        "input": {"question": "What is Phoenix?"},
+        "output": {"answer": "Phoenix is an AI observability platform"},
+        "metadata": {"source": "docs", "verified": True},
+        "splits": ["train", "validation"]  # Can belong to multiple splits
+    },
+    {
+        "input": {"question": "How do I install Phoenix?"},
+        "output": {"answer": "pip install arize-phoenix"},
+        "metadata": {"source": "quickstart"},
+        "splits": "train"  # Single split
+    }
+]
+
+dataset = client.datasets.create_dataset(
+    name="structured-examples",
+    examples=examples,
+    dataset_description="Dataset using structured examples format"
+)
+```
+
+## Adding Examples to Existing Datasets
+
+Append new examples to an existing dataset:
+
+```python
+from phoenix.client import Client
+
+client = Client()
+
+# Add more examples to existing dataset
+updated_dataset = client.datasets.add_examples_to_dataset(
+    dataset="customer-support-qa",  # Can use ID or name
+    inputs=[{"question": "How do I change my email?"}],
+    outputs=[{"answer": "Go to Account Settings and update your email..."}],
+    metadata=[{"category": "account", "priority": "medium"}]
+)
+
+print(f"Dataset now has {len(updated_dataset)} examples")
+```
+
+<Note>
+  Adding examples creates a new version of the dataset. Previous experiments remain linked to their original versions.
+</Note>
+
+## Dataset Format
+
+Regardless of creation method, datasets are stored in a consistent format:
+
+```python
+# Access dataset properties
+print(f"Dataset ID: {dataset.id}")
+print(f"Dataset Name: {dataset.name}")
+print(f"Version ID: {dataset.version_id}")
+print(f"Example Count: {len(dataset)}")
+print(f"Created At: {dataset.created_at}")
+
+# Iterate over examples
+for example in dataset:
+    print(f"Example ID: {example['id']}")
+    print(f"Input: {example['input']}")
+    print(f"Output: {example['output']}")
+    print(f"Metadata: {example['metadata']}")
+    print(f"Updated At: {example['updated_at']}")
+
+# Convert to DataFrame
+df = dataset.to_dataframe()
+print(df.head())
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Quality over Quantity" icon="star">
+    Start with a small, high-quality dataset rather than a large, noisy one. Curate examples that represent important use cases.
+  </Card>
+  
+  <Card title="Diverse Examples" icon="shapes">
+    Include edge cases, common scenarios, and challenging examples to ensure comprehensive evaluation.
+  </Card>
+  
+  <Card title="Rich Metadata" icon="tags">
+    Add metadata like difficulty, category, or source to enable filtering and analysis.
+  </Card>
+  
+  <Card title="Link to Traces" icon="link">
+    When creating from production, preserve span_id links to maintain traceability.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Run Experiments" icon="flask" href="/datasets/experiments">
+    Learn how to run experiments on your datasets
+  </Card>
+  <Card title="Dataset Versioning" icon="code-branch" href="/datasets/versioning">
+    Manage dataset versions and exports
+  </Card>
+</CardGroup>

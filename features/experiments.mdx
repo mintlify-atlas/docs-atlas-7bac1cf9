@@ -1,0 +1,427 @@
+---
+title: Experiments
+description: Systematic experiment tracking for testing prompts, models, and retrieval configurations with comprehensive comparison tools
+---
+
+Phoenix experiments enable systematic testing and comparison of LLM application variants. Run your task across a dataset, track results, evaluate outputs, and compare performance—all with full traceability and version control.
+
+## What are Experiments?
+
+An **experiment** runs a user-defined task function across every example in a dataset and records the results. Experiments help answer questions like:
+
+- Which prompt template performs best?
+- How does GPT-4 compare to Claude for my use case?
+- Did my retrieval improvements increase answer quality?
+- What's the impact of temperature on output consistency?
+
+Experiments are tracked in Phoenix with:
+- Complete input/output logs for every example
+- Distributed traces for each task execution
+- Evaluation scores from multiple metrics
+- Side-by-side comparison views
+
+## Running Experiments
+
+### Basic Experiment
+
+Use the `run_experiment` function (from `src/phoenix/experiments/functions.py`) to execute a task across a dataset:
+
+<Steps>
+  <Step title="Define your task">
+    Create a function that takes an input and returns an output:
+    
+    ```python
+    from openai import OpenAI
+    
+    client = OpenAI()
+    
+    def chatbot_task(input):
+        """Task function that processes dataset inputs"""
+        query = input['query']
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": query}]
+        )
+        return {"answer": response.choices[0].message.content}
+    ```
+  </Step>
+  
+  <Step title="Load your dataset">
+    ```python
+    import phoenix as px
+    
+    client = px.Client()
+    dataset = client.get_dataset(name="customer-support-qa")
+    ```
+  </Step>
+  
+  <Step title="Run the experiment">
+    ```python
+    from phoenix.experiments import run_experiment
+    
+    result = run_experiment(
+        dataset=dataset,
+        task=chatbot_task,
+        experiment_name="gpt-4-baseline",
+        experiment_description="Baseline with GPT-4 and default settings"
+    )
+    ```
+  </Step>
+</Steps>
+
+### Task Function Signatures
+
+The task function can accept different parameter combinations (implemented in `_bind_task_signature` from `src/phoenix/experiments/functions.py`):
+
+<Tabs>
+  <Tab title="Single Argument">
+    Receives the example's `input` field:
+    
+    ```python
+    def task(input):
+        # input = example.input
+        return process(input)
+    ```
+  </Tab>
+  
+  <Tab title="Named Parameters">
+    Access specific example fields by name:
+    
+    ```python
+    def task(input, expected, metadata):
+        # input = example.input
+        # expected = example.output (reference answer)
+        # metadata = example.metadata
+        return process(input, reference=expected)
+    ```
+    
+    Available parameters:
+    - `input`: The input field
+    - `expected` or `reference`: The expected output
+    - `metadata`: Example metadata
+    - `example`: The full Example object
+  </Tab>
+  
+  <Tab title="Async Task">
+    Tasks can be async for concurrent execution:
+    
+    ```python
+    async def task(input):
+        response = await async_llm_call(input['query'])
+        return {"answer": response}
+    ```
+  </Tab>
+</Tabs>
+
+### Experiment with Evaluators
+
+Add evaluators to assess task outputs automatically:
+
+```python
+from phoenix.experiments import run_experiment
+from phoenix.experiments.evaluators import (
+    RelevanceEvaluator,
+    CoherenceEvaluator,
+    ConcisenessEvaluator
+)
+from phoenix.evals import OpenAIModel
+
+model = OpenAIModel(model="gpt-4")
+
+result = run_experiment(
+    dataset=dataset,
+    task=chatbot_task,
+    experiment_name="gpt-4-with-evals",
+    evaluators=[
+        RelevanceEvaluator(model=model),
+        CoherenceEvaluator(model=model),
+        ConcisenessEvaluator(model=model)
+    ]
+)
+
+print(result)
+# Displays summary with evaluation scores
+```
+
+### Custom Evaluators
+
+Pass custom evaluation functions:
+
+```python
+from phoenix.experiments.evaluators import create_evaluator
+
+@create_evaluator(name="answer_length")
+def length_check(output):
+    """Check if answer is appropriately concise"""
+    answer = output.get('answer', '')
+    word_count = len(answer.split())
+    if 20 <= word_count <= 100:
+        return 1.0  # Good length
+    return 0.0  # Too short or too long
+
+result = run_experiment(
+    dataset=dataset,
+    task=chatbot_task,
+    evaluators=[length_check]
+)
+```
+
+## Experiment Results
+
+The `run_experiment` function returns a `RanExperiment` object (from `src/phoenix/experiments/types.py`) with comprehensive results:
+
+```python
+result = run_experiment(dataset=dataset, task=task)
+
+# Access experiment metadata
+print(f"Experiment ID: {result.id}")
+print(f"Dataset: {result.dataset_id}")
+print(f"Examples: {len(result.dataset.examples)}")
+
+# View task performance summary
+print(result.task_summary)
+# Shows: success rate, error rate, avg duration
+
+# Access individual runs
+for run in result.runs.values():
+    print(f"Example {run.dataset_example_id}:")
+    print(f"  Output: {run.output}")
+    print(f"  Duration: {run.end_time - run.start_time}")
+    if run.error:
+        print(f"  Error: {run.error}")
+
+# View evaluation results
+if result.evaluation_summaries:
+    for eval_name, summary in result.evaluation_summaries.items():
+        print(f"{eval_name}: {summary.mean_score:.2f}")
+```
+
+### Experiment URLs
+
+Each experiment gets a unique URL in the Phoenix UI:
+
+```python
+result = run_experiment(
+    dataset=dataset,
+    task=task,
+    experiment_name="my-experiment"
+)
+
+# Output during execution:
+# 🧪 Experiment started.
+# 📺 View dataset experiments: http://localhost:6006/datasets/123/experiments
+# 🔗 View this experiment: http://localhost:6006/datasets/123/experiments/456
+```
+
+## Comparing Experiments
+
+### Run Multiple Variants
+
+Test different configurations systematically:
+
+```python
+from phoenix.experiments import run_experiment
+
+dataset = client.get_dataset(name="qa-dataset")
+
+# Experiment 1: GPT-4
+def gpt4_task(input):
+    response = openai_client.chat.completions.create(
+        model="gpt-4",
+        temperature=0.7,
+        messages=[{"role": "user", "content": input['query']}]
+    )
+    return {"answer": response.choices[0].message.content}
+
+exp1 = run_experiment(
+    dataset=dataset,
+    task=gpt4_task,
+    experiment_name="gpt-4-temp-0.7",
+    evaluators=evaluators
+)
+
+# Experiment 2: GPT-3.5
+def gpt35_task(input):
+    response = openai_client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        temperature=0.7,
+        messages=[{"role": "user", "content": input['query']}]
+    )
+    return {"answer": response.choices[0].message.content}
+
+exp2 = run_experiment(
+    dataset=dataset,
+    task=gpt35_task,
+    experiment_name="gpt-3.5-temp-0.7",
+    evaluators=evaluators
+)
+
+# Compare in Phoenix UI
+print(f"Compare at: http://localhost:6006/datasets/{dataset.id}/experiments")
+```
+
+### Side-by-Side Comparison
+
+The Phoenix UI provides side-by-side comparison views:
+
+- **Aggregate Metrics**: Compare mean scores, success rates, latency
+- **Example-Level**: See outputs for each example across experiments
+- **Evaluation Breakdown**: Compare evaluator scores
+- **Trace Comparison**: View distributed traces side-by-side
+
+## Advanced Features
+
+### Repetitions
+
+Run each example multiple times to measure consistency:
+
+```python
+result = run_experiment(
+    dataset=dataset,
+    task=task,
+    repetitions=3  # Run each example 3 times
+)
+
+# Analyze variance across repetitions
+for example_id in dataset.examples.keys():
+    runs = [r for r in result.runs.values() if r.dataset_example_id == example_id]
+    outputs = [r.output for r in runs]
+    print(f"Example {example_id}: {len(set(str(o) for o in outputs))} unique outputs")
+```
+
+### Concurrency Control
+
+Adjust parallelism for async tasks:
+
+```python
+async def async_task(input):
+    return await process_async(input)
+
+result = run_experiment(
+    dataset=dataset,
+    task=async_task,
+    concurrency=10  # Run 10 tasks in parallel
+)
+```
+
+### Rate Limit Handling
+
+Automatically handle API rate limits:
+
+```python
+from openai import RateLimitError
+
+result = run_experiment(
+    dataset=dataset,
+    task=task,
+    rate_limit_errors=RateLimitError  # Auto-retry on rate limits
+)
+```
+
+### Dry Run Mode
+
+Test experiments without recording results:
+
+```python
+# Run on 5 random examples without saving to Phoenix
+result = run_experiment(
+    dataset=dataset,
+    task=task,
+    dry_run=5  # Test on 5 examples
+)
+```
+
+### Experiment Metadata
+
+Attach custom metadata to experiments:
+
+```python
+result = run_experiment(
+    dataset=dataset,
+    task=task,
+    experiment_name="prompt-v2-test",
+    experiment_description="Testing new prompt template with better instructions",
+    experiment_metadata={
+        "prompt_version": "v2",
+        "model": "gpt-4",
+        "temperature": 0.7,
+        "researcher": "alice"
+    }
+)
+```
+
+## Evaluating Existing Experiments
+
+Add evaluations to experiments after they've run using `evaluate_experiment` (from `src/phoenix/experiments/functions.py`):
+
+```python
+from phoenix.experiments import evaluate_experiment
+from phoenix.experiments.evaluators import HelpfulnessEvaluator
+
+# Load existing experiment
+experiment = client.get_experiment(experiment_id="exp-123")
+
+# Add new evaluator
+evaluated = evaluate_experiment(
+    experiment=experiment,
+    evaluators=[
+        HelpfulnessEvaluator(model=OpenAIModel(model="gpt-4"))
+    ]
+)
+
+print(evaluated.evaluation_summaries)
+```
+
+## Tracing Integration
+
+Experiments automatically capture distributed traces for each task execution. Traces are linked to experiment runs and include:
+
+- Full span hierarchy of task execution
+- LLM calls with prompts and completions
+- Retrieval operations with documents
+- Tool invocations with parameters
+- Timing and token usage data
+
+Access traces via:
+
+```python
+# Get trace ID for a specific run
+run = list(result.runs.values())[0]
+print(f"Trace ID: {run.trace_id}")
+
+# View trace in Phoenix UI
+print(f"Trace URL: http://localhost:6006/projects/{result.project_name}/traces/{run.trace_id}")
+```
+
+## Best Practices
+
+<Note>
+  **Use Consistent Datasets**: Always test variants on the same dataset version for fair comparison.
+</Note>
+
+**Name Descriptively**: Use experiment names that capture what changed (e.g., "gpt-4-temp-0.5" vs "gpt-4-temp-0.9").
+
+**Version Your Code**: Tag experiments with git commits or version numbers in metadata.
+
+**Start Small**: Test with `dry_run` mode before running full experiments.
+
+**Track Everything**: Add metadata about model settings, prompt versions, and experimental parameters.
+
+**Review Failures**: Check error rates and investigate failed examples to improve robustness.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Datasets" icon="database" href="/features/datasets">
+    Create and manage datasets for experiments
+  </Card>
+  <Card title="Evaluation" icon="check" href="/features/evaluation">
+    Learn about evaluators and metrics
+  </Card>
+  <Card title="Playground" icon="gamepad" href="/features/playground">
+    Interactively test prompts before experiments
+  </Card>
+  <Card title="Experiments API" icon="code" href="/api/datasets">
+    Complete API reference for experiments
+  </Card>
+</CardGroup>

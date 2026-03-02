@@ -1,0 +1,413 @@
+---
+title: Python OTEL Reference
+description: Complete reference for Phoenix OpenTelemetry integration
+---
+
+The `arize-phoenix-otel` package provides OpenTelemetry-based instrumentation for automatic tracing of LLM applications.
+
+## Installation
+
+```bash
+pip install arize-phoenix-otel
+```
+
+## Quick Start
+
+```python
+from phoenix.otel import register
+
+# Simplest setup - auto-instrument everything
+tracer_provider = register(auto_instrument=True)
+
+# Your LLM code is now automatically traced!
+import openai
+client = openai.OpenAI()
+response = client.chat.completions.create(
+    model="gpt-4",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+```
+
+## register()
+
+The main function for setting up Phoenix tracing.
+
+### Signature
+
+```python
+from phoenix.otel import register
+
+tracer_provider = register(
+    endpoint: Optional[str] = None,
+    project_name: Optional[str] = None,
+    batch: bool = False,
+    set_global_tracer_provider: bool = True,
+    headers: Optional[Dict[str, str]] = None,
+    protocol: Optional[Literal["http/protobuf", "grpc"]] = None,
+    verbose: bool = True,
+    auto_instrument: bool = False,
+    api_key: Optional[str] = None,
+    **kwargs: Any
+) -> TracerProvider
+```
+
+### Parameters
+
+<ParamField path="endpoint" type="str">
+  The collector endpoint to which spans will be exported. If not provided, the `PHOENIX_COLLECTOR_ENDPOINT` environment variable will be used. The export protocol will be inferred from the endpoint.
+  
+  **Default:** `http://localhost:6006`
+</ParamField>
+
+<ParamField path="project_name" type="str">
+  The name of the project to which spans will be associated. If not provided, the `PHOENIX_PROJECT_NAME` environment variable will be used.
+  
+  **Default:** `default`
+</ParamField>
+
+<ParamField path="batch" type="bool">
+  If `True`, spans will be processed using a `BatchSpanProcessor`. If `False`, spans will be processed one at a time using a `SimpleSpanProcessor`.
+  
+  **Recommended:** Use `True` for production environments.
+  
+  **Default:** `False`
+</ParamField>
+
+<ParamField path="set_global_tracer_provider" type="bool">
+  If `False`, the TracerProvider will not be set as the global tracer provider.
+  
+  **Default:** `True`
+</ParamField>
+
+<ParamField path="headers" type="Dict[str, str]">
+  Optional headers to include in the request to the collector. If not provided, the `PHOENIX_CLIENT_HEADERS` environment variable will be used.
+</ParamField>
+
+<ParamField path="protocol" type="'http/protobuf' | 'grpc'">
+  The protocol to use for the collector endpoint. If not provided, the protocol will be inferred from the endpoint URL.
+</ParamField>
+
+<ParamField path="verbose" type="bool">
+  If `True`, configuration details will be printed to stdout.
+  
+  **Default:** `True`
+</ParamField>
+
+<ParamField path="auto_instrument" type="bool">
+  If `True`, automatically instruments all installed OpenInference libraries (OpenAI, LangChain, LlamaIndex, etc.).
+  
+  **Default:** `False`
+</ParamField>
+
+<ParamField path="api_key" type="str">
+  API key for authentication. If not provided, the `PHOENIX_API_KEY` environment variable will be used.
+</ParamField>
+
+### Returns
+
+<ResponseField name="tracer_provider" type="TracerProvider">
+  An OpenTelemetry TracerProvider configured for Phoenix.
+</ResponseField>
+
+### Examples
+
+<CodeGroup>
+```python Basic Setup
+from phoenix.otel import register
+
+tracer_provider = register(auto_instrument=True)
+```
+
+```python Production Configuration
+from phoenix.otel import register
+
+tracer_provider = register(
+    project_name="my-llm-app",
+    batch=True,  # Use batching for better performance
+    auto_instrument=True
+)
+```
+
+```python Phoenix Cloud
+from phoenix.otel import register
+
+tracer_provider = register(
+    endpoint="https://app.phoenix.arize.com",
+    api_key="your-api-key",
+    project_name="my-app",
+    batch=True,
+    auto_instrument=True
+)
+```
+
+```python Custom Headers
+from phoenix.otel import register
+
+tracer_provider = register(
+    endpoint="https://my-phoenix.com:6006/v1/traces",
+    headers={"Authorization": "Bearer my-token"},
+    protocol="http/protobuf"
+)
+```
+
+```python Environment Variables
+# Set environment variables first:
+# export PHOENIX_PROJECT_NAME="my-project"
+# export PHOENIX_API_KEY="my-api-key"
+
+from phoenix.otel import register
+
+tracer_provider = register()  # Uses environment variables
+```
+</CodeGroup>
+
+## Advanced Components
+
+For fine-grained control, you can use the lower-level components directly.
+
+### TracerProvider
+
+An extension of `opentelemetry.sdk.trace.TracerProvider` with Phoenix-aware defaults.
+
+```python
+from phoenix.otel import TracerProvider
+from opentelemetry.sdk.resources import Resource
+from phoenix.otel import PROJECT_NAME
+
+tracer_provider = TracerProvider(
+    endpoint="http://localhost:6006/v1/traces",
+    protocol="http/protobuf",
+    resource=Resource({PROJECT_NAME: "my-custom-project"})
+)
+```
+
+### SpanProcessors
+
+#### SimpleSpanProcessor
+
+Processes and exports spans immediately (good for development).
+
+```python
+from phoenix.otel import SimpleSpanProcessor, TracerProvider
+
+tracer_provider = TracerProvider()
+processor = SimpleSpanProcessor(
+    endpoint="http://localhost:6006/v1/traces"
+)
+tracer_provider.add_span_processor(processor)
+```
+
+#### BatchSpanProcessor
+
+Batches spans for efficient export (recommended for production).
+
+```python
+from phoenix.otel import BatchSpanProcessor, TracerProvider
+
+tracer_provider = TracerProvider()
+processor = BatchSpanProcessor(
+    endpoint="http://localhost:6006/v1/traces",
+    max_queue_size=2048,
+    max_export_batch_size=512,
+    schedule_delay_millis=5000
+)
+tracer_provider.add_span_processor(processor)
+```
+
+### SpanExporters
+
+#### HTTPSpanExporter
+
+Exports spans via HTTP/protobuf.
+
+```python
+from phoenix.otel import HTTPSpanExporter, SimpleSpanProcessor
+
+exporter = HTTPSpanExporter(
+    endpoint="http://localhost:6006/v1/traces",
+    headers={"Authorization": "Bearer my-token"}
+)
+
+processor = SimpleSpanProcessor(span_exporter=exporter)
+```
+
+#### GRPCSpanExporter
+
+Exports spans via gRPC.
+
+```python
+from phoenix.otel import GRPCSpanExporter, BatchSpanProcessor
+
+exporter = GRPCSpanExporter(
+    endpoint="http://localhost:4317",
+    headers={"authorization": "Bearer my-token"}
+)
+
+processor = BatchSpanProcessor(span_exporter=exporter)
+```
+
+## Manual Instrumentation
+
+If you don't use `auto_instrument=True`, you can manually instrument specific libraries:
+
+<CodeGroup>
+```python OpenAI
+from openinference.instrumentation.openai import OpenAIInstrumentor
+from phoenix.otel import register
+
+tracer_provider = register()
+OpenAIInstrumentor().instrument(tracer_provider=tracer_provider)
+```
+
+```python LangChain
+from openinference.instrumentation.langchain import LangChainInstrumentor
+from phoenix.otel import register
+
+tracer_provider = register()
+LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
+```
+
+```python LlamaIndex
+from openinference.instrumentation.llama_index import LlamaIndexInstrumentor
+from phoenix.otel import register
+
+tracer_provider = register()
+LlamaIndexInstrumentor().instrument(tracer_provider=tracer_provider)
+```
+
+```python Anthropic
+from openinference.instrumentation.anthropic import AnthropicInstrumentor
+from phoenix.otel import register
+
+tracer_provider = register()
+AnthropicInstrumentor().instrument(tracer_provider=tracer_provider)
+```
+</CodeGroup>
+
+## Resource Attributes
+
+Set custom resource attributes:
+
+```python
+from phoenix.otel import register, PROJECT_NAME
+from opentelemetry.sdk.resources import Resource
+
+tracer_provider = register(
+    resource=Resource({
+        PROJECT_NAME: "my-app",
+        "service.version": "1.0.0",
+        "deployment.environment": "production"
+    })
+)
+```
+
+## Environment Variables
+
+<ParamField path="PHOENIX_COLLECTOR_ENDPOINT" type="string">
+  Phoenix server URL (default: `http://localhost:6006`)
+</ParamField>
+
+<ParamField path="PHOENIX_API_KEY" type="string">
+  API key for authentication with Phoenix Cloud
+</ParamField>
+
+<ParamField path="PHOENIX_PROJECT_NAME" type="string">
+  Default project name for traces (default: `default`)
+</ParamField>
+
+<ParamField path="PHOENIX_CLIENT_HEADERS" type="string">
+  Additional headers to send with requests (comma-separated `key:value` pairs)
+</ParamField>
+
+<ParamField path="OTEL_EXPORTER_OTLP_HEADERS" type="string">
+  Standard OpenTelemetry headers (comma-separated `key=value` pairs)
+</ParamField>
+
+## Configuration Examples
+
+### Development Setup
+
+```python
+from phoenix.otel import register
+
+# Local Phoenix instance with verbose logging
+tracer_provider = register(
+    endpoint="http://localhost:6006",
+    project_name="dev-project",
+    batch=False,  # Immediate export for debugging
+    verbose=True,
+    auto_instrument=True
+)
+```
+
+### Production Setup
+
+```python
+from phoenix.otel import register
+
+# Production configuration with batching
+tracer_provider = register(
+    project_name="prod-app",
+    batch=True,  # Batch for performance
+    auto_instrument=True,
+    verbose=False  # Disable verbose output
+)
+```
+
+### Multi-Project Setup
+
+```python
+from phoenix.otel import TracerProvider, BatchSpanProcessor
+from opentelemetry.sdk.resources import Resource
+from phoenix.otel import PROJECT_NAME
+
+# Create separate providers for different projects
+project_a_provider = TracerProvider(
+    resource=Resource({PROJECT_NAME: "project-a"})
+)
+project_a_provider.add_span_processor(
+    BatchSpanProcessor(endpoint="http://localhost:6006/v1/traces")
+)
+
+project_b_provider = TracerProvider(
+    resource=Resource({PROJECT_NAME: "project-b"})
+)
+project_b_provider.add_span_processor(
+    BatchSpanProcessor(endpoint="http://localhost:6006/v1/traces")
+)
+```
+
+## Troubleshooting
+
+### Traces Not Appearing
+
+1. Check that Phoenix is running: `http://localhost:6006`
+2. Verify the endpoint URL is correct
+3. Enable verbose mode: `register(verbose=True)`
+4. Check for errors in the console output
+
+### Performance Issues
+
+- Use `batch=True` for production
+- Adjust batch processor settings:
+  ```python
+  from phoenix.otel import BatchSpanProcessor
+  
+  processor = BatchSpanProcessor(
+      max_queue_size=2048,
+      max_export_batch_size=512,
+      schedule_delay_millis=5000
+  )
+  ```
+
+### Authentication Errors
+
+- Verify API key is correct
+- Check headers are properly formatted
+- Ensure authorization header uses "Bearer" prefix
+
+## See Also
+
+- [Python Client Reference](/sdk/python/client) - Interact with Phoenix
+- [Python Evals Reference](/sdk/python/evals) - Run evaluations
+- [Tracing Guide](/tracing/overview) - Learn about tracing concepts

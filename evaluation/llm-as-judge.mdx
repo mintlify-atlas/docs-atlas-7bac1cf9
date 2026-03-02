@@ -1,0 +1,406 @@
+---
+title: 'LLM-as-a-Judge'
+description: 'Use LLMs to evaluate model outputs with structured judgments'
+icon: 'gavel'
+---
+
+LLM-as-a-judge is a powerful pattern for evaluating AI outputs using another LLM as the evaluator. This approach is particularly effective for subjective criteria like helpfulness, tone, or creativity that are difficult to measure programmatically.
+
+## Why LLM-as-a-Judge?
+
+LLM-as-a-judge evaluations offer several advantages:
+
+- **Nuanced judgments**: Capture subjective qualities like tone, style, and appropriateness
+- **Flexible criteria**: Evaluate on any dimension you can describe in a prompt
+- **Explanations**: Get reasoning behind each score to understand the evaluation
+- **Scalability**: Evaluate thousands of examples automatically
+- **Consistency**: More consistent than human raters at scale
+
+<Note>
+  While LLM-as-a-judge is powerful, it's not perfect. Always validate evaluator behavior on a sample of data before trusting it at scale.
+</Note>
+
+## How It Works
+
+LLM-as-a-judge evaluations work by:
+
+1. **Formatting the prompt**: Insert evaluation data into a prompt template
+2. **Calling the LLM**: Send the prompt to an evaluator LLM (often GPT-4 or Claude)
+3. **Structured output**: Extract labels and scores using tool calling or structured output
+4. **Generating explanations**: Request the LLM to justify its judgment
+
+```python
+from phoenix.evals import create_classifier, LLM
+
+llm = LLM(provider="openai", model="gpt-4o")
+
+evaluator = create_classifier(
+    name="helpfulness",
+    prompt_template="""
+Is this response helpful in answering the user's question?
+
+Question: {input}
+Response: {output}
+
+A helpful response directly addresses the question and provides actionable information.
+    """,
+    llm=llm,
+    choices={"helpful": 1.0, "not_helpful": 0.0}
+)
+
+scores = evaluator.evaluate({
+    "input": "How do I reset my password?",
+    "output": "Go to Settings > Account > Reset Password."
+})
+
+print(scores[0].label)  # "helpful"
+print(scores[0].score)  # 1.0
+print(scores[0].explanation)  # "The response provides clear step-by-step instructions..."
+```
+
+## Prompt Templates
+
+Prompt templates are the foundation of LLM-as-a-judge evaluations. Phoenix uses Jinja2-style templates with variables enclosed in `{variable}`.
+
+### Basic Template
+
+```python
+template = "Rate the quality of this response: {output}"
+```
+
+### Multi-variable Template
+
+```python
+template = """
+Question: {input}
+Answer: {output}
+Context: {context}
+
+Is the answer faithful to the context?
+"""
+```
+
+### Chat-based Template
+
+For chat models, you can use a list of message dictionaries:
+
+```python
+from phoenix.evals import ClassificationEvaluator, LLM
+
+llm = LLM(provider="openai", model="gpt-4o")
+
+evaluator = ClassificationEvaluator(
+    name="tone",
+    llm=llm,
+    prompt_template=[
+        {"role": "system", "content": "You are an expert at evaluating tone."},
+        {"role": "user", "content": "Classify the tone of this message: {output}"}
+    ],
+    choices=["professional", "casual", "aggressive"]
+)
+```
+
+## Evaluation Criteria
+
+Clear, specific criteria are essential for reliable LLM-as-a-judge evaluations. Follow these best practices:
+
+### Define Success Clearly
+
+<Tabs>
+  <Tab title="Good">
+    ```python
+    prompt_template = """
+Evaluate if the response is concise.
+
+Response: {output}
+
+A concise response:
+- Answers the question directly
+- Uses minimal words without sacrificing clarity
+- Avoids repetition and unnecessary elaboration
+
+Classify as concise or verbose.
+    """
+    ```
+  </Tab>
+  <Tab title="Bad">
+    ```python
+    prompt_template = "Is this response good? {output}"
+    ```
+  </Tab>
+</Tabs>
+
+### Provide Examples When Helpful
+
+```python
+prompt_template = """
+Classify the sentiment of this customer review.
+
+Review: {output}
+
+Examples:
+- "Great product, highly recommend!" → positive
+- "It's okay, nothing special." → neutral  
+- "Terrible quality, broke after one use." → negative
+
+Classify as positive, neutral, or negative.
+"""
+```
+
+### Use Specific Language
+
+<Tabs>
+  <Tab title="Good">
+    "Does the response contain factual information that contradicts the provided context?"
+  </Tab>
+  <Tab title="Bad">
+    "Is the response bad?"
+  </Tab>
+</Tabs>
+
+## Choosing Labels and Scores
+
+Phoenix supports three formats for classification choices:
+
+### Labels Only
+
+Use when you only need categorical outputs:
+
+```python
+create_classifier(
+    name="sentiment",
+    prompt_template="Classify sentiment: {text}",
+    llm=llm,
+    choices=["positive", "negative", "neutral"]
+)
+```
+
+### Labels with Scores
+
+Map labels to numeric scores for quantitative analysis:
+
+```python
+create_classifier(
+    name="quality",
+    prompt_template="Rate response quality: {output}",
+    llm=llm,
+    choices={
+        "excellent": 5,
+        "good": 4,
+        "fair": 3,
+        "poor": 2,
+        "terrible": 1
+    }
+)
+```
+
+### Labels with Scores and Descriptions
+
+<Warning>
+  This format is not recommended. LLMs do not reliably use the descriptions when classifying.
+</Warning>
+
+```python
+# Not recommended - descriptions are often ignored
+choices={
+    "accurate": (1.0, "Response is factually correct"),
+    "inaccurate": (0.0, "Response contains errors")
+}
+```
+
+## Best Practices
+
+### Use Explanations
+
+Always request explanations to understand evaluation reasoning:
+
+```python
+evaluator = ClassificationEvaluator(
+    name="relevance",
+    llm=llm,
+    prompt_template="Is this relevant? {output}",
+    choices={"relevant": 1.0, "irrelevant": 0.0},
+    include_explanation=True  # Default is True
+)
+
+scores = evaluator.evaluate(eval_input)
+print(scores[0].explanation)  # LLM's reasoning
+```
+
+### Choose the Right Judge Model
+
+Different models have different strengths:
+
+<Tabs>
+  <Tab title="GPT-4o">
+    **Best for**: General purpose evaluation, nuanced judgments
+    
+    ```python
+    llm = LLM(provider="openai", model="gpt-4o")
+    ```
+    
+    - Excellent at following instructions
+    - Strong reasoning capabilities
+    - Good at explaining decisions
+  </Tab>
+  <Tab title="GPT-4o-mini">
+    **Best for**: Cost-effective evaluation at scale
+    
+    ```python
+    llm = LLM(provider="openai", model="gpt-4o-mini")
+    ```
+    
+    - 80% cheaper than GPT-4o
+    - Fast inference
+    - Good for straightforward criteria
+  </Tab>
+  <Tab title="Claude Sonnet">
+    **Best for**: Long context evaluation, detailed analysis
+    
+    ```python
+    llm = LLM(provider="anthropic", model="claude-3-5-sonnet-20241022")
+    ```
+    
+    - Excellent with long documents
+    - Thoughtful explanations
+    - Strong at nuanced criteria
+  </Tab>
+</Tabs>
+
+### Validate Your Evaluator
+
+Before running evaluations at scale, validate on a small labeled dataset:
+
+```python
+import pandas as pd
+from phoenix.evals import evaluate_dataframe
+
+# Create validation set with known labels
+validation_df = pd.DataFrame([
+    {"input": "Q1", "output": "A1", "expected_label": "correct"},
+    {"input": "Q2", "output": "A2", "expected_label": "incorrect"},
+    # ... more examples
+])
+
+# Run evaluation
+results_df = evaluate_dataframe(
+    dataframe=validation_df,
+    evaluators=[evaluator]
+)
+
+# Compare to expected labels
+import json
+for idx, row in results_df.iterrows():
+    score = json.loads(row['correctness_score'])
+    actual = score['label']
+    expected = row['expected_label']
+    if actual != expected:
+        print(f"Mismatch on row {idx}: {actual} vs {expected}")
+        print(f"Explanation: {score['explanation']}")
+```
+
+### Handle Edge Cases
+
+Consider how your evaluator should handle:
+
+- **Empty outputs**: What should the score be?
+- **Off-topic responses**: Should this be a separate label?
+- **Ambiguous cases**: How to handle borderline examples?
+
+```python
+prompt_template = """
+Classify this response as helpful or not_helpful.
+
+Question: {input}
+Response: {output}
+
+Classify as:
+- helpful: Response directly answers the question
+- not_helpful: Response is off-topic, empty, or unhelpful
+"""
+```
+
+## Common Pitfalls
+
+### Vague Criteria
+
+<Warning>
+  Avoid subjective terms like "good", "bad", or "quality" without defining them.
+</Warning>
+
+```python
+# Bad - undefined criteria
+"Is this response good?"
+
+# Good - specific criteria  
+"Does this response answer all parts of the question with accurate information?"
+```
+
+### Biased Prompts
+
+Avoid leading language that biases the evaluation:
+
+```python
+# Bad - leading question
+"This response is probably wrong. Is it incorrect?"
+
+# Good - neutral framing
+"Based on the context, is this response factually correct?"
+```
+
+### Ignoring Context
+
+Provide all necessary context for evaluation:
+
+```python
+# Bad - missing context
+evaluator.evaluate({"output": "Paris"})
+
+# Good - includes question
+evaluator.evaluate({
+    "input": "What is the capital of France?",
+    "output": "Paris"
+})
+```
+
+## Advanced: Custom LLM Evaluators
+
+For full control, create custom evaluators by extending `LLMEvaluator`:
+
+```python
+from phoenix.evals import LLMEvaluator, Score, LLM
+from phoenix.evals.llm.prompts import PromptTemplate
+from typing import Dict, Any, List
+
+class CustomLLMEvaluator(LLMEvaluator):
+    def __init__(self, llm: LLM):
+        super().__init__(
+            name="custom",
+            llm=llm,
+            prompt_template="Your prompt: {input}"
+        )
+    
+    def _evaluate(self, eval_input: Dict[str, Any]) -> List[Score]:
+        # Custom evaluation logic
+        prompt = self.prompt_template.render(variables=eval_input)
+        response = self.llm.generate(prompt=prompt)
+        
+        # Parse response and create score
+        return [Score(
+            name=self.name,
+            score=1.0,
+            label="custom",
+            kind="llm"
+        )]
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Pre-built Metrics" icon="list-check" href="/evaluation/pre-built-metrics">
+    Use ready-made LLM-as-judge evaluators
+  </Card>
+  <Card title="Custom Evaluators" icon="code" href="/evaluation/custom-evaluators">
+    Build custom evaluation logic
+  </Card>
+</CardGroup>

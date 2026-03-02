@@ -1,0 +1,482 @@
+---
+title: TypeScript OTEL Reference
+description: Complete reference for Phoenix OpenTelemetry integration in TypeScript/JavaScript
+---
+
+The `@arizeai/phoenix-otel` package provides OpenTelemetry-based instrumentation for automatic tracing of LLM applications in Node.js.
+
+## Installation
+
+```bash
+npm install @arizeai/phoenix-otel
+```
+
+## Quick Start
+
+```typescript
+import { register } from '@arizeai/phoenix-otel';
+
+// Simplest setup - auto-discover Phoenix locally
+const provider = register({
+  projectName: 'my-llm-app'
+});
+
+// Your LLM code is now automatically traced!
+import OpenAI from 'openai';
+
+const client = new OpenAI();
+const response = await client.chat.completions.create({
+  model: 'gpt-4',
+  messages: [{ role: 'user', content: 'Hello!' }]
+});
+```
+
+## register()
+
+The main function for setting up Phoenix tracing.
+
+### Signature
+
+```typescript
+import { register } from '@arizeai/phoenix-otel';
+import type { RegisterParams } from '@arizeai/phoenix-otel';
+
+const provider = register(params: RegisterParams): NodeTracerProvider
+```
+
+### Parameters
+
+<ParamField path="projectName" type="string">
+  The project name that spans will be associated with in Phoenix. This helps organize and filter traces in the Phoenix UI.
+  
+  **Default:** `"default"`
+</ParamField>
+
+<ParamField path="url" type="string">
+  The URL to the Phoenix server. Can be postfixed with the tracing path. If not provided, the system will check the `PHOENIX_COLLECTOR_URL` environment variable.
+  
+  The URL will be automatically normalized to include the `/v1/traces` endpoint if not present.
+  
+  **Default:** `http://localhost:6006`
+</ParamField>
+
+<ParamField path="apiKey" type="string">
+  The API key for authenticating with the Phoenix instance. If not provided, the system will check the `PHOENIX_API_KEY` environment variable.
+  
+  The API key will be automatically added to the Authorization header as a Bearer token.
+</ParamField>
+
+<ParamField path="headers" type="Record<string, string>">
+  Additional headers to be included when communicating with the OTLP collector. These headers will be merged with any automatically generated headers (like Authorization).
+</ParamField>
+
+<ParamField path="batch" type="boolean">
+  Whether to use batching for span processing.
+  
+  - `true` (default): Uses `OpenInferenceBatchSpanProcessor` for better performance in production
+  - `false`: Uses `OpenInferenceSimpleSpanProcessor` for immediate span export (useful for debugging)
+  
+  Batching is recommended for production environments as it reduces network overhead and improves performance.
+  
+  **Default:** `true`
+</ParamField>
+
+<ParamField path="instrumentations" type="Instrumentation[]">
+  A list of OpenTelemetry instrumentations to automatically register.
+  
+  **Note:** This feature may only work with CommonJS projects. ESM projects may require manual instrumentation registration.
+</ParamField>
+
+<ParamField path="spanProcessors" type="SpanProcessor[]">
+  Custom span processors to add to the tracer provider.
+  
+  **Important:** When provided, this will override the default span processor created from the `url`, `apiKey`, `headers`, and `batch` parameters.
+</ParamField>
+
+<ParamField path="global" type="boolean">
+  Whether to register the tracer provider as the global provider.
+  
+  When `true` (default), the provider will be registered globally and can be accessed throughout the application. Set to `false` if you want to manage the provider lifecycle manually or use multiple providers.
+  
+  **Default:** `true`
+</ParamField>
+
+<ParamField path="diagLogLevel" type="DiagLogLevel">
+  The diagnostic log level for the built-in `DiagConsoleLogger`.
+  
+  This controls the verbosity of OpenTelemetry's internal logging. Omit this parameter to disable built-in logging entirely.
+  
+  Available levels: `DiagLogLevel.DEBUG`, `DiagLogLevel.INFO`, `DiagLogLevel.WARN`, `DiagLogLevel.ERROR`
+</ParamField>
+
+### Returns
+
+<ResponseField name="provider" type="NodeTracerProvider">
+  The configured `NodeTracerProvider` instance that can be used to create traces.
+</ResponseField>
+
+### Examples
+
+<CodeGroup>
+```typescript Basic Setup
+import { register } from '@arizeai/phoenix-otel';
+
+const provider = register({
+  projectName: 'my-application'
+});
+```
+
+```typescript Production Configuration
+import { register } from '@arizeai/phoenix-otel';
+
+const provider = register({
+  projectName: 'my-web-app',
+  url: 'https://app.phoenix.arize.com',
+  apiKey: 'phx_1234567890abcdef',
+  batch: true,
+  global: true
+});
+```
+
+```typescript Phoenix Cloud
+import { register } from '@arizeai/phoenix-otel';
+
+const provider = register({
+  projectName: 'production-app',
+  url: 'https://app.phoenix.arize.com',
+  apiKey: process.env.PHOENIX_API_KEY,
+  batch: true
+});
+```
+
+```typescript Custom Headers
+import { register } from '@arizeai/phoenix-otel';
+
+const provider = register({
+  projectName: 'my-app',
+  url: 'https://my-phoenix.com',
+  headers: {
+    'x-custom-header': 'value',
+    'x-api-version': '1.0'
+  }
+});
+```
+
+```typescript With Instrumentations
+import { register } from '@arizeai/phoenix-otel';
+import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
+import { ExpressInstrumentation } from '@opentelemetry/instrumentation-express';
+
+const provider = register({
+  projectName: 'my-app',
+  instrumentations: [
+    new HttpInstrumentation(),
+    new ExpressInstrumentation()
+  ]
+});
+```
+
+```typescript Debugging Configuration
+import { register, DiagLogLevel } from '@arizeai/phoenix-otel';
+
+const provider = register({
+  projectName: 'debug-app',
+  url: 'http://localhost:6006',
+  batch: false, // Immediate span export for debugging
+  diagLogLevel: DiagLogLevel.DEBUG
+});
+```
+</CodeGroup>
+
+## Advanced Components
+
+For fine-grained control, you can use lower-level functions and components.
+
+### getDefaultSpanProcessor()
+
+Creates a default span processor configured for Phoenix.
+
+```typescript
+import { getDefaultSpanProcessor } from '@arizeai/phoenix-otel';
+
+const processor = getDefaultSpanProcessor({
+  url: 'https://app.phoenix.arize.com',
+  apiKey: 'your-api-key',
+  batch: true,
+  headers: {
+    'x-custom-header': 'value'
+  }
+});
+```
+
+### ensureCollectorEndpoint()
+
+Normalizes a Phoenix server URL to ensure it includes the correct OTLP traces endpoint.
+
+```typescript
+import { ensureCollectorEndpoint } from '@arizeai/phoenix-otel';
+
+const url = ensureCollectorEndpoint('https://app.phoenix.arize.com');
+// Returns: 'https://app.phoenix.arize.com/v1/traces'
+
+const urlWithPath = ensureCollectorEndpoint('https://app.phoenix.arize.com/v1/traces');
+// Returns: 'https://app.phoenix.arize.com/v1/traces' (no change)
+```
+
+### createNoOpProvider()
+
+Creates a no-op tracer provider for testing or when tracing is disabled.
+
+```typescript
+import { createNoOpProvider } from '@arizeai/phoenix-otel';
+
+const provider = createNoOpProvider();
+// All tracing calls become no-ops
+```
+
+## Manual Tracing
+
+Create custom traces and spans using the OpenTelemetry API:
+
+```typescript
+import { register, trace } from '@arizeai/phoenix-otel';
+
+const provider = register({
+  projectName: 'my-app'
+});
+
+const tracer = trace.getTracer('my-instrumentation');
+
+// Create a span
+const span = tracer.startSpan('my-operation');
+
+try {
+  // Your code here
+  span.setAttribute('user.id', '123');
+  span.setAttribute('request.url', 'https://example.com');
+  
+  // Do work...
+  
+  span.setStatus({ code: SpanStatusCode.OK });
+} catch (error) {
+  span.setStatus({
+    code: SpanStatusCode.ERROR,
+    message: error.message
+  });
+  throw error;
+} finally {
+  span.end();
+}
+```
+
+### Using Context API
+
+```typescript
+import { register, trace, context } from '@arizeai/phoenix-otel';
+
+const provider = register({
+  projectName: 'my-app'
+});
+
+const tracer = trace.getTracer('my-instrumentation');
+
+// Run code within a span context
+await tracer.startActiveSpan('my-operation', async (span) => {
+  try {
+    span.setAttribute('operation.type', 'llm-call');
+    
+    // Your async code here
+    const result = await someAsyncOperation();
+    
+    span.setAttribute('result.length', result.length);
+    span.setStatus({ code: SpanStatusCode.OK });
+    
+    return result;
+  } catch (error) {
+    span.setStatus({
+      code: SpanStatusCode.ERROR,
+      message: error.message
+    });
+    throw error;
+  } finally {
+    span.end();
+  }
+});
+```
+
+## Framework Integration
+
+### Express.js
+
+```typescript
+import express from 'express';
+import { register } from '@arizeai/phoenix-otel';
+import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
+import { ExpressInstrumentation } from '@opentelemetry/instrumentation-express';
+
+// Set up tracing before importing your app
+register({
+  projectName: 'my-express-app',
+  instrumentations: [
+    new HttpInstrumentation(),
+    new ExpressInstrumentation()
+  ]
+});
+
+const app = express();
+
+app.get('/', (req, res) => {
+  res.send('Hello World!');
+});
+
+app.listen(3000);
+```
+
+### Next.js
+
+Create an instrumentation file:
+
+```typescript
+// instrumentation.ts (or instrumentation.js)
+export async function register() {
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    const { register: phoenixRegister } = await import('@arizeai/phoenix-otel');
+    
+    phoenixRegister({
+      projectName: 'my-nextjs-app',
+      batch: true
+    });
+  }
+}
+```
+
+Then enable in `next.config.js`:
+
+```javascript
+// next.config.js
+module.exports = {
+  experimental: {
+    instrumentationHook: true,
+  },
+};
+```
+
+### Vercel AI SDK
+
+```typescript
+import { register } from '@arizeai/phoenix-otel';
+import { openai } from '@ai-sdk/openai';
+import { generateText } from 'ai';
+
+// Set up Phoenix tracing
+register({
+  projectName: 'vercel-ai-app'
+});
+
+// Use Vercel AI SDK - automatically traced
+const { text } = await generateText({
+  model: openai('gpt-4'),
+  prompt: 'What is Phoenix?'
+});
+```
+
+## Environment Variables
+
+<ParamField path="PHOENIX_COLLECTOR_URL" type="string">
+  Phoenix server URL for trace collection
+  
+  **Default:** `http://localhost:6006`
+</ParamField>
+
+<ParamField path="PHOENIX_API_KEY" type="string">
+  API key for authentication with Phoenix Cloud
+</ParamField>
+
+<ParamField path="NODE_ENV" type="string">
+  Node environment (development, production, etc.)
+</ParamField>
+
+## Configuration Examples
+
+### Development
+
+```typescript
+import { register, DiagLogLevel } from '@arizeai/phoenix-otel';
+
+const provider = register({
+  projectName: 'dev-project',
+  url: 'http://localhost:6006',
+  batch: false,
+  diagLogLevel: DiagLogLevel.DEBUG
+});
+```
+
+### Production
+
+```typescript
+import { register } from '@arizeai/phoenix-otel';
+
+const provider = register({
+  projectName: 'prod-app',
+  url: process.env.PHOENIX_COLLECTOR_URL,
+  apiKey: process.env.PHOENIX_API_KEY,
+  batch: true,
+  global: true
+});
+```
+
+### Testing
+
+```typescript
+import { createNoOpProvider } from '@arizeai/phoenix-otel';
+
+const provider = process.env.NODE_ENV === 'test'
+  ? createNoOpProvider()
+  : register({
+      projectName: 'my-app',
+      batch: true
+    });
+```
+
+## Troubleshooting
+
+### Traces Not Appearing
+
+1. Verify Phoenix is running: `http://localhost:6006`
+2. Check the URL is correct
+3. Enable debug logging:
+   ```typescript
+   import { DiagLogLevel } from '@arizeai/phoenix-otel';
+   
+   register({
+     projectName: 'my-app',
+     diagLogLevel: DiagLogLevel.DEBUG
+   });
+   ```
+
+### ESM Issues
+
+For ESM projects, you may need to use dynamic imports:
+
+```typescript
+// instrumentation.ts
+export async function register() {
+  const { register: phoenixRegister } = await import('@arizeai/phoenix-otel');
+  
+  phoenixRegister({
+    projectName: 'my-app'
+  });
+}
+```
+
+### Performance Issues
+
+- Always use `batch: true` in production
+- Adjust batch size if needed via custom span processors
+- Consider sampling for high-volume applications
+
+## See Also
+
+- [TypeScript Client Reference](/sdk/typescript/client) - Interact with Phoenix
+- [TypeScript Evals Reference](/sdk/typescript/evals) - Run evaluations
+- [OpenTelemetry Documentation](https://opentelemetry.io/docs/languages/js/) - Official OTEL docs

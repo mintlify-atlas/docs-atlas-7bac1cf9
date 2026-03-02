@@ -1,0 +1,298 @@
+---
+title: "LangChain Integration"
+description: Auto-instrument LangChain applications in Python and JavaScript for complete observability of chains, agents, and retrievers
+---
+
+Phoenix has first-class support for [LangChain](https://langchain.com/) applications in both Python and JavaScript. LangChain is one of the most popular frameworks for building LLM applications, and Phoenix makes it easy to trace the entire execution graph.
+
+## Installation
+
+<CodeGroup>
+```bash Python
+pip install openinference-instrumentation-langchain langchain_openai
+```
+
+```bash TypeScript
+npm install @arizeai/openinference-instrumentation-langchain @langchain/core @langchain/openai
+```
+</CodeGroup>
+
+## Setup
+
+<Steps>
+  <Step title="Register Phoenix tracer">
+    <CodeGroup>
+    ```python Python
+    from phoenix.otel import register
+    
+    # Configure the Phoenix tracer
+    tracer_provider = register(
+      project_name="my-llm-app",  # Default is 'default'
+      auto_instrument=True  # Auto-instrument based on installed packages
+    )
+    ```
+    
+    ```typescript TypeScript
+    import { register } from "@arizeai/phoenix-otel";
+    import { LangChainInstrumentation } from "@arizeai/openinference-instrumentation-langchain";
+    
+    const tracerProvider = register({
+      projectName: "my-llm-app",
+    });
+    
+    // Instrument LangChain
+    const instrumentation = new LangChainInstrumentation();
+    instrumentation.manuallyInstrument(tracerProvider);
+    ```
+    </CodeGroup>
+  </Step>
+  
+  <Step title="Use LangChain as normal">
+    All LangChain operations will now be automatically traced!
+  </Step>
+</Steps>
+
+## Basic Example
+
+<CodeGroup>
+```python Python
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
+
+# Define a simple chain
+prompt = ChatPromptTemplate.from_template("{x} {y} {z}?").partial(x="why is", z="blue")
+chain = prompt | ChatOpenAI(model_name="gpt-3.5-turbo")
+
+# Run the chain - automatically traced!
+result = chain.invoke(dict(y="sky"))
+print(result.content)
+```
+
+```typescript TypeScript
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { ChatOpenAI } from "@langchain/openai";
+
+// Define a simple chain
+const prompt = ChatPromptTemplate.fromTemplate("{x} {y} {z}?");
+const model = new ChatOpenAI({ modelName: "gpt-3.5-turbo" });
+const chain = prompt.pipe(model);
+
+// Run the chain - automatically traced!
+const result = await chain.invoke({ x: "why is", y: "sky", z: "blue" });
+console.log(result.content);
+```
+</CodeGroup>
+
+## What Gets Traced
+
+Phoenix automatically captures:
+
+- **Chains**: Input/output, intermediate steps, latency
+- **Agents**: Tool selection, reasoning, execution
+- **Retrievers**: Query, retrieved documents, scores
+- **LLM Calls**: Model, prompts, tokens, parameters
+- **Tools**: Function calls, inputs, outputs
+- **Errors**: Exceptions, retries, failures
+
+## Advanced Examples
+
+### RAG Chain with Retriever
+
+<CodeGroup>
+```python Python
+from langchain_community.vectorstores import FAISS
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough
+
+# Create vector store
+vectorstore = FAISS.from_texts(
+    ["Phoenix is an LLM observability tool", "LangChain is a framework for LLMs"],
+    embedding=OpenAIEmbeddings()
+)
+retriever = vectorstore.as_retriever()
+
+# Create RAG chain
+prompt = ChatPromptTemplate.from_template(
+    "Answer based on context: {context}\n\nQuestion: {question}"
+)
+model = ChatOpenAI(model="gpt-3.5-turbo")
+
+rag_chain = (
+    {"context": retriever, "question": RunnablePassthrough()}
+    | prompt
+    | model
+    | StrOutputParser()
+)
+
+# Phoenix traces the entire RAG pipeline
+result = rag_chain.invoke("What is Phoenix?")
+print(result)
+```
+
+```typescript TypeScript
+import { FaissStore } from "@langchain/community/vectorstores/faiss";
+import { OpenAIEmbeddings, ChatOpenAI } from "@langchain/openai";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { StringOutputParser } from "@langchain/core/output_parsers";
+import { RunnablePassthrough, RunnableSequence } from "@langchain/core/runnables";
+
+// Create vector store
+const vectorstore = await FaissStore.fromTexts(
+  ["Phoenix is an LLM observability tool", "LangChain is a framework for LLMs"],
+  [{}, {}],
+  new OpenAIEmbeddings()
+);
+const retriever = vectorstore.asRetriever();
+
+// Create RAG chain
+const prompt = ChatPromptTemplate.fromTemplate(
+  "Answer based on context: {context}\n\nQuestion: {question}"
+);
+const model = new ChatOpenAI({ modelName: "gpt-3.5-turbo" });
+
+const ragChain = RunnableSequence.from([
+  {
+    context: retriever,
+    question: new RunnablePassthrough()
+  },
+  prompt,
+  model,
+  new StringOutputParser()
+]);
+
+// Phoenix traces the entire RAG pipeline
+const result = await ragChain.invoke("What is Phoenix?");
+console.log(result);
+```
+</CodeGroup>
+
+### Agent with Tools
+
+<CodeGroup>
+```python Python
+from langchain.agents import AgentExecutor, create_openai_functions_agent
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.tools import tool
+
+@tool
+def get_word_length(word: str) -> int:
+    """Returns the length of a word."""
+    return len(word)
+
+tools = [get_word_length]
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful assistant"),
+    ("user", "{input}"),
+    MessagesPlaceholder(variable_name="agent_scratchpad"),
+])
+
+llm = ChatOpenAI(model="gpt-4", temperature=0)
+agent = create_openai_functions_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+# Phoenix traces the agent's reasoning and tool use
+result = agent_executor.invoke({"input": "How long is the word 'observability'?"})
+print(result["output"])
+```
+
+```typescript TypeScript
+import { ChatOpenAI } from "@langchain/openai";
+import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts";
+import { createOpenAIFunctionsAgent, AgentExecutor } from "langchain/agents";
+import { DynamicStructuredTool } from "@langchain/core/tools";
+import { z } from "zod";
+
+const getWordLength = new DynamicStructuredTool({
+  name: "get_word_length",
+  description: "Returns the length of a word.",
+  schema: z.object({
+    word: z.string().describe("The word to measure"),
+  }),
+  func: async ({ word }) => word.length.toString(),
+});
+
+const tools = [getWordLength];
+
+const prompt = ChatPromptTemplate.fromMessages([
+  ["system", "You are a helpful assistant"],
+  ["user", "{input}"],
+  new MessagesPlaceholder("agent_scratchpad"),
+]);
+
+const llm = new ChatOpenAI({ modelName: "gpt-4", temperature: 0 });
+const agent = await createOpenAIFunctionsAgent({ llm, tools, prompt });
+const agentExecutor = new AgentExecutor({ agent, tools });
+
+// Phoenix traces the agent's reasoning and tool use
+const result = await agentExecutor.invoke({ input: "How long is the word 'observability'?" });
+console.log(result.output);
+```
+</CodeGroup>
+
+### Streaming Chains
+
+<CodeGroup>
+```python Python
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
+
+prompt = ChatPromptTemplate.from_template("Tell me a joke about {topic}")
+model = ChatOpenAI(model="gpt-3.5-turbo")
+chain = prompt | model
+
+# Stream the response
+for chunk in chain.stream({"topic": "observability"}):
+    print(chunk.content, end="", flush=True)
+
+# Phoenix still captures the full trace
+```
+
+```typescript TypeScript
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { ChatOpenAI } from "@langchain/openai";
+
+const prompt = ChatPromptTemplate.fromTemplate("Tell me a joke about {topic}");
+const model = new ChatOpenAI({ modelName: "gpt-3.5-turbo" });
+const chain = prompt.pipe(model);
+
+// Stream the response
+const stream = await chain.stream({ topic: "observability" });
+for await (const chunk of stream) {
+  process.stdout.write(chunk.content);
+}
+
+// Phoenix still captures the full trace
+```
+</CodeGroup>
+
+## Observability in Phoenix
+
+Once instrumented, you can:
+
+- **Visualize chain execution** graphs with all intermediate steps
+- **Debug agent reasoning** and tool selection
+- **Inspect retrieved documents** and relevance scores
+- **Monitor token usage** across all LLM calls
+- **Track latency** for each chain component
+- **Analyze errors** and retry behavior
+
+## Resources
+
+<CardGroup cols={2}>
+  <Card title="Python Example Notebook" icon="python" href="https://colab.research.google.com/github/Arize-ai/phoenix/blob/main/tutorials/tracing/langchain_tracing_tutorial.ipynb">
+    Complete LangChain tutorial
+  </Card>
+  <Card title="Python Package" icon="github" href="https://github.com/Arize-ai/openinference/blob/main/python/instrumentation/openinference-instrumentation-langchain">
+    View Python source
+  </Card>
+  <Card title="TypeScript Package" icon="github" href="https://github.com/Arize-ai/openinference/tree/main/js/packages/openinference-instrumentation-langchain">
+    View TypeScript source
+  </Card>
+  <Card title="LangChain Docs" icon="book" href="https://python.langchain.com/docs/get_started/introduction">
+    LangChain documentation
+  </Card>
+</CardGroup>

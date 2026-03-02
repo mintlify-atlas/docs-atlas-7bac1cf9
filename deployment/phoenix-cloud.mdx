@@ -1,0 +1,404 @@
+---
+title: Phoenix Cloud
+description: Managed Phoenix hosting with enterprise features and security
+---
+
+Phoenix Cloud provides a fully managed, production-ready Phoenix deployment at [app.phoenix.arize.com](https://app.phoenix.arize.com).
+
+## What is Phoenix Cloud?
+
+Phoenix Cloud is the managed SaaS version of Phoenix, hosted and maintained by Arize AI. It provides all the features of self-hosted Phoenix without the operational overhead.
+
+## Benefits of Phoenix Cloud
+
+<CardGroup cols={2}>
+  <Card title="Zero Infrastructure" icon="server">
+    No servers, databases, or containers to manage. Focus on your LLM applications, not infrastructure.
+  </Card>
+  
+  <Card title="Enterprise Security" icon="shield">
+    SOC 2 Type II compliant with encryption at rest and in transit, SSO support, and role-based access control.
+  </Card>
+  
+  <Card title="Automatic Scaling" icon="arrows-maximize">
+    Automatically scales to handle your trace volume without capacity planning or performance tuning.
+  </Card>
+  
+  <Card title="High Availability" icon="circle-check">
+    99.9% uptime SLA with automatic failover, backups, and disaster recovery.
+  </Card>
+  
+  <Card title="Latest Features" icon="sparkles">
+    Always running the latest Phoenix version with new features and improvements.
+  </Card>
+  
+  <Card title="Expert Support" icon="headset">
+    Dedicated support from the Phoenix team with SLAs based on your plan.
+  </Card>
+</CardGroup>
+
+## Getting Started
+
+<Steps>
+  <Step title="Sign up">
+    Create an account at [app.phoenix.arize.com](https://app.phoenix.arize.com)
+    
+    Sign up with:
+    - Email and password
+    - Google OAuth
+    - GitHub OAuth
+    - SSO (Enterprise plans)
+  </Step>
+  
+  <Step title="Create a project">
+    Create your first project to organize traces:
+    
+    ```python
+    import phoenix as px
+    
+    # Configure Phoenix Cloud
+    client = px.Client(
+        endpoint="https://app.phoenix.arize.com",
+        api_key="YOUR_API_KEY"
+    )
+    ```
+  </Step>
+  
+  <Step title="Send traces">
+    Instrument your application to send traces to Phoenix Cloud:
+    
+    ```python
+    from openinference.instrumentation.openai import OpenAIInstrumentor
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    
+    # Configure OpenTelemetry
+    tracer_provider = TracerProvider()
+    tracer_provider.add_span_processor(
+        SimpleSpanProcessor(
+            OTLPSpanExporter(
+                endpoint="https://app.phoenix.arize.com/v1/traces",
+                headers={"api_key": "YOUR_API_KEY"}
+            )
+        )
+    )
+    
+    # Instrument OpenAI
+    OpenAIInstrumentor().instrument(tracer_provider=tracer_provider)
+    ```
+  </Step>
+</Steps>
+
+## Features
+
+### Tracing and Observability
+
+- **Full OpenTelemetry Support**: Ingest traces via OTLP (HTTP and gRPC)
+- **LLM-Specific Instrumentation**: Automatic instrumentation for OpenAI, Anthropic, LangChain, LlamaIndex, and more
+- **Real-Time Monitoring**: Live trace ingestion with sub-second latency
+- **Advanced Search**: Filter and search traces by any attribute
+- **Cost Tracking**: Automatic token usage and cost calculation
+
+### Evaluation and Experimentation
+
+- **LLM Evals**: Run evaluations using Phoenix's built-in evaluators or custom logic
+- **Datasets**: Version-controlled datasets for experimentation
+- **Experiments**: Track prompt and model variations
+- **A/B Testing**: Compare performance across different configurations
+
+### Prompt Management
+
+- **Version Control**: Track prompt changes over time
+- **Playground**: Test prompts with different models and parameters
+- **Deployment**: Deploy prompts from the UI or API
+- **Templates**: Reusable prompt templates with variables
+
+### Team Collaboration
+
+- **Workspaces**: Isolate projects by team or environment
+- **Role-Based Access**: Admin, Member, and Viewer roles
+- **Shared Dashboards**: Collaborate on trace analysis
+- **Comments and Annotations**: Add context to traces
+
+## Pricing
+
+Phoenix Cloud offers flexible pricing based on your usage:
+
+### Free Tier
+
+- **Traces**: Up to 100,000 spans/month
+- **Retention**: 7 days
+- **Users**: Unlimited
+- **Projects**: Unlimited
+- **Support**: Community (Slack)
+
+### Pro Tier
+
+Starting at $99/month:
+
+- **Traces**: 1M spans/month included, $0.10 per additional 100K spans
+- **Retention**: 30 days (configurable)
+- **SSO**: Google, GitHub, Microsoft
+- **Support**: Email support with 24-hour SLA
+- **Advanced Features**: Custom evaluators, datasets, experiments
+
+### Enterprise Tier
+
+Custom pricing:
+
+- **Traces**: Custom volume
+- **Retention**: Custom (up to 365 days)
+- **SSO**: SAML, OIDC, LDAP
+- **Support**: Dedicated support with 4-hour SLA
+- **Advanced Features**: All features included
+- **Compliance**: SOC 2, HIPAA, GDPR
+- **SLA**: 99.9% uptime guarantee
+- **Custom Deployment**: Option for dedicated infrastructure
+
+[Contact Sales](https://phoenix.arize.com/contact) for Enterprise pricing.
+
+## Security and Compliance
+
+### Data Security
+
+- **Encryption in Transit**: TLS 1.3 for all data in transit
+- **Encryption at Rest**: AES-256 encryption for all stored data
+- **Network Isolation**: VPC isolation with private subnets
+- **Access Controls**: Role-based access control (RBAC)
+- **Audit Logs**: Complete audit trail of all actions
+
+### Compliance
+
+- **SOC 2 Type II**: Annual audit completed
+- **GDPR**: EU data residency available
+- **HIPAA**: Available on Enterprise plans
+- **ISO 27001**: In progress
+
+### Authentication
+
+- **SSO**: SAML 2.0, OIDC, Google, GitHub, Microsoft
+- **MFA**: Multi-factor authentication required for admins
+- **API Keys**: Scoped API keys with expiration
+- **Session Management**: Automatic session timeout
+
+### Data Retention and Deletion
+
+- **Configurable Retention**: Set retention policies by project
+- **Automatic Deletion**: Data deleted after retention period
+- **Right to Deletion**: Delete user data on request
+- **Export**: Export all traces in OpenTelemetry format
+
+## Regions and Data Residency
+
+Phoenix Cloud is available in multiple regions:
+
+- **US East (Virginia)**: Default region for North America
+- **EU West (Ireland)**: For EU customers requiring GDPR compliance
+- **Asia Pacific (Sydney)**: Coming soon
+
+Enterprise customers can request specific regions.
+
+## Integration Examples
+
+### Python SDK
+
+```python
+import phoenix as px
+from phoenix.trace import SpanEvaluations
+
+# Configure client
+client = px.Client(
+    endpoint="https://app.phoenix.arize.com",
+    api_key="YOUR_API_KEY"
+)
+
+# Query traces
+traces = client.query_spans(
+    project_name="my-project",
+    start_time="2024-01-01",
+    end_time="2024-01-31"
+)
+
+# Run evaluations
+evaluations = client.run_evals(
+    evaluators=["hallucination", "toxicity"],
+    dataset_name="production-traces"
+)
+```
+
+### OpenTelemetry Collector
+
+```yaml
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+exporters:
+  otlphttp:
+    endpoint: https://app.phoenix.arize.com
+    headers:
+      api_key: YOUR_API_KEY
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [otlphttp]
+```
+
+### cURL Examples
+
+```bash
+# Send traces via HTTP
+curl -X POST https://app.phoenix.arize.com/v1/traces \
+  -H "Content-Type: application/json" \
+  -H "api_key: YOUR_API_KEY" \
+  -d @traces.json
+
+# Query projects
+curl -H "Authorization: Bearer YOUR_API_KEY" \
+  https://app.phoenix.arize.com/api/v1/projects
+```
+
+## Migration from Self-Hosted
+
+Migrate from self-hosted Phoenix to Phoenix Cloud:
+
+<Steps>
+  <Step title="Export traces">
+    Export traces from self-hosted Phoenix:
+    
+    ```python
+    from phoenix.db import get_traces
+    
+    traces = get_traces(
+        project_name="my-project",
+        start_time="2024-01-01"
+    )
+    
+    traces.to_parquet("traces.parquet")
+    ```
+  </Step>
+  
+  <Step title="Import to Cloud">
+    Import traces to Phoenix Cloud:
+    
+    ```python
+    import phoenix as px
+    
+    client = px.Client(
+        endpoint="https://app.phoenix.arize.com",
+        api_key="YOUR_API_KEY"
+    )
+    
+    client.upload_traces("traces.parquet", project_name="my-project")
+    ```
+  </Step>
+  
+  <Step title="Update instrumentation">
+    Update your application to send traces to Phoenix Cloud:
+    
+    ```python
+    # Before (self-hosted)
+    endpoint = "http://localhost:6006"
+    
+    # After (Phoenix Cloud)
+    endpoint = "https://app.phoenix.arize.com"
+    headers = {"api_key": "YOUR_API_KEY"}
+    ```
+  </Step>
+</Steps>
+
+## Monitoring and Alerts
+
+### System Status
+
+Check Phoenix Cloud status at [status.phoenix.arize.com](https://status.phoenix.arize.com)
+
+### Alerts
+
+Configure alerts for:
+- Trace volume thresholds
+- Error rate increases
+- Evaluation failures
+- Cost thresholds
+
+### Metrics Dashboard
+
+Monitor your usage:
+- Traces ingested
+- Storage used
+- API calls
+- Active users
+- Cost breakdown
+
+## Support
+
+### Community Support (Free Tier)
+
+- **Slack**: Join the [Phoenix Slack community](https://join.slack.com/t/arize-ai/shared_invite/zt-3r07iavnk-ammtATWSlF0pSrd1DsMW7g)
+- **GitHub**: File issues at [github.com/Arize-ai/phoenix](https://github.com/Arize-ai/phoenix)
+- **Documentation**: [docs.arize.com/phoenix](https://docs.arize.com/phoenix)
+
+### Email Support (Pro Tier)
+
+- **Response Time**: 24-hour SLA
+- **Email**: support@arize.com
+- **Priority**: Normal
+
+### Dedicated Support (Enterprise Tier)
+
+- **Response Time**: 4-hour SLA
+- **Channels**: Email, Slack Connect, Phone
+- **Priority**: High
+- **Success Manager**: Dedicated customer success manager
+- **Training**: Onboarding and training sessions
+
+## FAQ
+
+<AccordionGroup>
+  <Accordion title="How is Phoenix Cloud different from self-hosted?">
+    Phoenix Cloud is fully managed with automatic scaling, backups, and updates. Self-hosted Phoenix gives you full control over infrastructure and data location.
+  </Accordion>
+  
+  <Accordion title="Can I migrate from Phoenix Cloud back to self-hosted?">
+    Yes, you can export all your traces in OpenTelemetry format and import them into a self-hosted Phoenix instance.
+  </Accordion>
+  
+  <Accordion title="Where is my data stored?">
+    Data is stored in AWS in the region you select (US East or EU West). Enterprise customers can request specific regions.
+  </Accordion>
+  
+  <Accordion title="Is Phoenix Cloud open source?">
+    Phoenix Cloud runs the same open-source Phoenix code available on GitHub, with additional managed infrastructure and features.
+  </Accordion>
+  
+  <Accordion title="What happens if I exceed my plan limits?">
+    You'll receive email notifications at 80% and 100% of your limit. Pro tier overages are billed automatically. Free tier ingestion may be throttled.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Sign Up" icon="user-plus" href="https://app.phoenix.arize.com">
+    Create a Phoenix Cloud account
+  </Card>
+  
+  <Card title="API Keys" icon="key" href="/deployment/api-keys">
+    Learn about API key management
+  </Card>
+  
+  <Card title="Authentication" icon="lock" href="/deployment/authentication">
+    Configure SSO and user management
+  </Card>
+  
+  <Card title="Contact Sales" icon="envelope" href="https://phoenix.arize.com/contact">
+    Get Enterprise pricing
+  </Card>
+</CardGroup>

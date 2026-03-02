@@ -1,0 +1,123 @@
+---
+title: "Integrations Overview"
+description: Phoenix integrates with popular LLM frameworks and providers through OpenTelemetry-based instrumentation
+---
+
+Phoenix is built on OpenTelemetry and provides auto-instrumentation for popular LLM frameworks, SDKs, and providers. Tracing integrations allow you to observe your LLM application's runtime behavior with minimal code changes.
+
+## Supported Frameworks
+
+Phoenix provides first-class support for the most popular LLM application frameworks:
+
+<CardGroup cols={3}>
+  <Card title="LangChain" icon="link" href="/integrations/langchain">
+    Auto-instrument LangChain applications in Python and JavaScript
+  </Card>
+  <Card title="LlamaIndex" icon="brain" href="/integrations/llamaindex">
+    Trace LlamaIndex queries, retrievals, and agent workflows
+  </Card>
+  <Card title="OpenAI" icon="comment" href="/integrations/openai">
+    Monitor OpenAI API calls including GPT-4, embeddings, and agents
+  </Card>
+  <Card title="Anthropic" icon="message" href="/integrations/anthropic">
+    Instrument Claude API calls with streaming support
+  </Card>
+  <Card title="OpenTelemetry" icon="chart-network" href="/integrations/opentelemetry">
+    Custom instrumentation using OpenTelemetry primitives
+  </Card>
+</CardGroup>
+
+## LLM Providers
+
+Phoenix supports instrumentation for all major LLM providers:
+
+### Python Integrations
+
+| Provider | Package | Description |
+|----------|---------|-------------|
+| **OpenAI** | `openinference-instrumentation-openai` | GPT models, embeddings, and function calling |
+| **Anthropic** | `openinference-instrumentation-anthropic` | Claude models with streaming support |
+| **Google GenAI** | `openinference-instrumentation-google-genai` | Gemini and PaLM models |
+| **AWS Bedrock** | `openinference-instrumentation-bedrock` | Amazon Bedrock models |
+| **MistralAI** | `openinference-instrumentation-mistralai` | Mistral models |
+| **VertexAI** | `openinference-instrumentation-vertexai` | Google Vertex AI models |
+| **Groq** | `openinference-instrumentation-groq` | Groq inference engine |
+| **LiteLLM** | `openinference-instrumentation-litellm` | Unified interface for 100+ LLMs |
+
+### JavaScript/TypeScript Integrations
+
+| Provider | Package | Description |
+|----------|---------|-------------|
+| **OpenAI** | `@arizeai/openinference-instrumentation-openai` | OpenAI Node.js SDK |
+| **LangChain.js** | `@arizeai/openinference-instrumentation-langchain` | LangChain JavaScript framework |
+| **Vercel AI SDK** | `@arizeai/openinference-vercel` | Vercel AI SDK streaming |
+| **BeeAI** | `@arizeai/openinference-instrumentation-beeai` | BeeAI agent framework |
+
+## Agent Frameworks
+
+Phoenix supports popular agent and workflow frameworks:
+
+- **DSPy** - `openinference-instrumentation-dspy`
+- **CrewAI** - `openinference-instrumentation-crewai`
+- **Haystack** - `openinference-instrumentation-haystack`
+- **Guardrails** - `openinference-instrumentation-guardrails`
+- **Instructor** - `openinference-instrumentation-instructor`
+- **Agno** - `openinference-instrumentation-agno`
+- **Pydantic AI** - `openinference-instrumentation-pydantic-ai`
+
+## Getting Started
+
+Most integrations follow a simple three-step pattern:
+
+<Steps>
+  <Step title="Install the instrumentation package">
+    ```bash
+    pip install openinference-instrumentation-{provider}
+    ```
+  </Step>
+  
+  <Step title="Register Phoenix tracer">
+    ```python
+    from phoenix.otel import register
+    
+    tracer_provider = register(
+      project_name="my-llm-app",
+      auto_instrument=True  # Auto-instrument based on installed packages
+    )
+    ```
+  </Step>
+  
+  <Step title="Run your application">
+    Your LLM calls will now be automatically traced and sent to Phoenix.
+  </Step>
+</Steps>
+
+## How It Works
+
+Phoenix integrations use **OpenTelemetry** to capture traces from your LLM applications:
+
+1. **Auto-instrumentation**: Instrumentation packages automatically patch SDK methods to capture trace data
+2. **OpenInference conventions**: Traces follow standardized semantic conventions for LLM observability
+3. **OTLP export**: Trace data is exported to Phoenix using the OpenTelemetry Protocol (OTLP)
+4. **Zero-code changes**: Most integrations require no changes to your application code
+
+<Note>
+All Phoenix integrations are **open source** and part of the [OpenInference](https://github.com/Arize-ai/openinference) project.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="OpenAI Integration" icon="comment" href="/integrations/openai">
+    Get started with OpenAI tracing
+  </Card>
+  <Card title="LangChain Integration" icon="link" href="/integrations/langchain">
+    Instrument LangChain applications
+  </Card>
+  <Card title="Custom Instrumentation" icon="code" href="/integrations/opentelemetry">
+    Build custom traces with OpenTelemetry
+  </Card>
+  <Card title="All Integrations" icon="grid" href="https://github.com/Arize-ai/openinference">
+    Browse all available integrations
+  </Card>
+</CardGroup>

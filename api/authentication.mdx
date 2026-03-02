@@ -1,0 +1,149 @@
+---
+title: Authentication
+description: API authentication methods for Phoenix
+---
+
+The Phoenix API supports multiple authentication methods to secure access to your data.
+
+## Authentication Methods
+
+### Bearer Token Authentication
+
+The primary authentication method is Bearer token authentication using the `Authorization` header.
+
+#### API Keys
+
+Generate an API key from the Phoenix UI and include it in the `Authorization` header:
+
+```bash
+curl -X GET "http://localhost:6006/v1/datasets" \
+  -H "Authorization: Bearer your-api-key-here"
+```
+
+<Note>
+API keys are long-lived credentials that provide programmatic access to the Phoenix API. Store them securely and never commit them to version control.
+</Note>
+
+#### Access Tokens
+
+For user-based authentication, Phoenix supports OAuth2-style access tokens with short expiration times. Access tokens can be obtained through the authentication flow and refreshed using refresh tokens.
+
+### Admin Secret (System Access)
+
+Phoenix supports a system admin secret configured via the `PHOENIX_ADMIN_SECRET` environment variable. This provides administrative access to all API endpoints:
+
+```bash
+curl -X GET "http://localhost:6006/v1/datasets" \
+  -H "Authorization: Bearer ${PHOENIX_ADMIN_SECRET}"
+```
+
+<Warning>
+The admin secret provides unrestricted access to Phoenix. Use it only for system-level operations and protect it carefully.
+</Warning>
+
+### Cookie-Based Authentication
+
+For web applications, Phoenix supports cookie-based authentication using the `phoenix-access-token` cookie. This is primarily used by the Phoenix UI.
+
+## Authentication Examples
+
+### Python
+
+Using the `requests` library:
+
+```python
+import requests
+
+api_key = "your-api-key-here"
+base_url = "http://localhost:6006"
+
+headers = {
+    "Authorization": f"Bearer {api_key}"
+}
+
+response = requests.get(f"{base_url}/v1/datasets", headers=headers)
+print(response.json())
+```
+
+### Node.js
+
+Using `fetch`:
+
+```javascript
+const apiKey = 'your-api-key-here';
+const baseUrl = 'http://localhost:6006';
+
+const response = await fetch(`${baseUrl}/v1/datasets`, {
+  headers: {
+    'Authorization': `Bearer ${apiKey}`
+  }
+});
+
+const data = await response.json();
+console.log(data);
+```
+
+### cURL
+
+```bash
+API_KEY="your-api-key-here"
+
+curl -X GET "http://localhost:6006/v1/datasets" \
+  -H "Authorization: Bearer ${API_KEY}"
+```
+
+## User Roles
+
+Phoenix supports role-based access control with the following roles:
+
+- **ADMIN**: Full access to all resources and operations
+- **VIEWER**: Read-only access to resources
+
+The user's role is encoded in their access token and determines what operations they can perform.
+
+## Generating API Keys
+
+<Steps>
+  <Step title="Access Phoenix UI">
+    Navigate to your Phoenix instance in a web browser
+  </Step>
+  <Step title="Go to Settings">
+    Click on the settings or user menu
+  </Step>
+  <Step title="Create API Key">
+    Generate a new API key with an optional description
+  </Step>
+  <Step title="Copy and Store">
+    Copy the API key immediately - it won't be shown again
+  </Step>
+</Steps>
+
+## Security Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Environment Variables">
+    Store API keys in environment variables, never hardcode them:
+    
+    ```bash
+    export PHOENIX_API_KEY="your-api-key-here"
+    ```
+  </Accordion>
+  
+  <Accordion title="Rotate Keys Regularly">
+    Generate new API keys periodically and revoke old ones to minimize security risks.
+  </Accordion>
+  
+  <Accordion title="Use HTTPS in Production">
+    Always use HTTPS when accessing the Phoenix API in production to encrypt credentials in transit.
+  </Accordion>
+  
+  <Accordion title="Limit Key Scope">
+    Generate separate API keys for different applications or services to limit the impact of a compromised key.
+  </Accordion>
+</AccordionGroup>
+
+## Unauthenticated Access
+
+If authentication is not enabled in your Phoenix deployment, API requests can be made without authentication headers. However, this is not recommended for production deployments.
+
+Check if authentication is enabled by inspecting the `authentication_enabled` flag in the server configuration.

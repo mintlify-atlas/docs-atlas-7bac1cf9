@@ -1,0 +1,589 @@
+---
+title: API Key Management
+description: Create and manage API keys for programmatic access to Phoenix
+---
+
+API keys provide secure programmatic access to Phoenix for applications, scripts, and integrations.
+
+## Overview
+
+Phoenix supports two types of API keys:
+
+- **User API Keys**: Associated with a specific user, inherits user permissions
+- **System API Keys**: Service accounts with specific role assignments (Enterprise)
+
+## Creating API Keys
+
+### Via Web UI
+
+<Steps>
+  <Step title="Navigate to API Keys">
+    Click your profile icon > Settings > API Keys
+  </Step>
+  
+  <Step title="Create new key">
+    Click "Create API Key"
+  </Step>
+  
+  <Step title="Configure key">
+    Set key properties:
+    - **Name**: Descriptive name (e.g., "Production App", "CI/CD Pipeline")
+    - **Description**: Optional details about usage
+    - **Expiration**: Set expiration date or leave blank for no expiration
+    - **Permissions**: Select scope (read-only, read-write, admin)
+  </Step>
+  
+  <Step title="Copy key">
+    Copy the API key (shown only once)
+    
+    <Warning>
+      Save the key securely. You won't be able to view it again.
+    </Warning>
+  </Step>
+</Steps>
+
+### Via API
+
+Create API keys programmatically:
+
+```bash
+curl -X POST https://app.phoenix.arize.com/api/v1/api-keys \
+  -H "Authorization: Bearer YOUR_EXISTING_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "CI/CD Pipeline",
+    "description": "Automated testing and deployment",
+    "expiresAt": "2024-12-31T23:59:59Z",
+    "scopes": ["traces:write", "projects:read"]
+  }'
+```
+
+Response:
+
+```json
+{
+  "id": "key_abc123",
+  "key": "px_live_abc123...",
+  "name": "CI/CD Pipeline",
+  "createdAt": "2024-01-15T10:30:00Z",
+  "expiresAt": "2024-12-31T23:59:59Z"
+}
+```
+
+## Using API Keys
+
+### HTTP Header Authentication
+
+Include the API key in the `Authorization` header:
+
+```bash
+curl -H "Authorization: Bearer px_live_abc123..." \
+  https://app.phoenix.arize.com/api/v1/projects
+```
+
+Or use the `api_key` header:
+
+```bash
+curl -H "api_key: px_live_abc123..." \
+  https://app.phoenix.arize.com/v1/traces
+```
+
+### Python SDK
+
+Configure the Phoenix client:
+
+```python
+import phoenix as px
+
+# Initialize client with API key
+client = px.Client(
+    endpoint="https://app.phoenix.arize.com",
+    api_key="px_live_abc123..."
+)
+
+# Query projects
+projects = client.get_projects()
+
+# Send traces
+client.log_traces(traces)
+```
+
+### OpenTelemetry
+
+Configure OTLP exporter with API key:
+
+```python
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+
+# Configure exporter with API key
+exporter = OTLPSpanExporter(
+    endpoint="https://app.phoenix.arize.com/v1/traces",
+    headers={"api_key": "px_live_abc123..."}
+)
+
+tracer_provider = TracerProvider()
+tracer_provider.add_span_processor(SimpleSpanProcessor(exporter))
+```
+
+### Environment Variables
+
+Store API keys in environment variables:
+
+```bash
+# Set environment variable
+export PHOENIX_API_KEY=px_live_abc123...
+
+# Phoenix SDK auto-detects the variable
+python -c "import phoenix as px; client = px.Client()"
+```
+
+## API Key Scopes
+
+Control what API keys can access with scopes:
+
+<ParamField path="traces:read" type="scope">
+  Read traces and spans
+</ParamField>
+
+<ParamField path="traces:write" type="scope">
+  Send new traces to Phoenix
+</ParamField>
+
+<ParamField path="projects:read" type="scope">
+  List and read project metadata
+</ParamField>
+
+<ParamField path="projects:write" type="scope">
+  Create and modify projects
+</ParamField>
+
+<ParamField path="datasets:read" type="scope">
+  Read datasets and examples
+</ParamField>
+
+<ParamField path="datasets:write" type="scope">
+  Create and modify datasets
+</ParamField>
+
+<ParamField path="experiments:read" type="scope">
+  Read experiment results
+</ParamField>
+
+<ParamField path="experiments:write" type="scope">
+  Run experiments and evaluations
+</ParamField>
+
+<ParamField path="admin" type="scope">
+  Full administrative access (user management, settings)
+</ParamField>
+
+### Scope Examples
+
+#### Read-Only Analytics Key
+
+```json
+{
+  "name": "Analytics Dashboard",
+  "scopes": [
+    "traces:read",
+    "projects:read",
+    "experiments:read"
+  ]
+}
+```
+
+#### CI/CD Pipeline Key
+
+```json
+{
+  "name": "CI/CD Pipeline",
+  "scopes": [
+    "traces:write",
+    "experiments:write",
+    "datasets:read"
+  ]
+}
+```
+
+#### Application Instrumentation Key
+
+```json
+{
+  "name": "Production App",
+  "scopes": [
+    "traces:write"
+  ]
+}
+```
+
+## Managing API Keys
+
+### Listing API Keys
+
+View all API keys for your account:
+
+```bash
+curl -H "Authorization: Bearer YOUR_KEY" \
+  https://app.phoenix.arize.com/api/v1/api-keys
+```
+
+Response:
+
+```json
+{
+  "keys": [
+    {
+      "id": "key_abc123",
+      "name": "Production App",
+      "description": "Main application key",
+      "createdAt": "2024-01-15T10:30:00Z",
+      "expiresAt": null,
+      "lastUsedAt": "2024-01-20T15:45:00Z",
+      "scopes": ["traces:write"]
+    },
+    {
+      "id": "key_def456",
+      "name": "CI/CD Pipeline",
+      "description": "Automated testing",
+      "createdAt": "2024-01-10T08:00:00Z",
+      "expiresAt": "2024-12-31T23:59:59Z",
+      "lastUsedAt": "2024-01-20T12:30:00Z",
+      "scopes": ["experiments:write", "datasets:read"]
+    }
+  ]
+}
+```
+
+### Revoking API Keys
+
+Revoke a key to prevent further use:
+
+#### Via Web UI
+
+1. Navigate to Settings > API Keys
+2. Find the key to revoke
+3. Click menu > Revoke
+4. Confirm revocation
+
+#### Via API
+
+```bash
+curl -X DELETE https://app.phoenix.arize.com/api/v1/api-keys/key_abc123 \
+  -H "Authorization: Bearer YOUR_KEY"
+```
+
+<Note>
+  Revoked keys cannot be restored. Applications using the key will receive authentication errors.
+</Note>
+
+### Rotating API Keys
+
+Best practice for rotating keys:
+
+<Steps>
+  <Step title="Create new key">
+    Generate a new API key with same permissions
+  </Step>
+  
+  <Step title="Update applications">
+    Deploy new key to all applications (keep old key active)
+  </Step>
+  
+  <Step title="Monitor usage">
+    Verify new key is working and old key usage stops
+  </Step>
+  
+  <Step title="Revoke old key">
+    After confirming migration, revoke the old key
+  </Step>
+</Steps>
+
+## System API Keys (Enterprise)
+
+System API keys are service accounts with independent permissions:
+
+### Creating System Keys
+
+<Note>
+  System API keys are available on Enterprise plans. [Contact Sales](https://phoenix.arize.com/contact) to enable.
+</Note>
+
+1. Navigate to Settings > System API Keys (admin only)
+2. Click "Create System Key"
+3. Configure:
+   - Name and description
+   - Role (Admin, Member, Viewer)
+   - Project access
+   - Expiration
+4. Save and copy key
+
+### System Key Features
+
+- **Independent permissions**: Not tied to user account
+- **Persistent**: Remain active even if users leave
+- **Auditable**: Tracked separately in access logs
+- **Granular access**: Scope to specific projects
+
+### Use Cases
+
+- **Service accounts**: Long-running background services
+- **CI/CD pipelines**: Automated testing and deployment
+- **Integrations**: Third-party tools and platforms
+- **Scheduled jobs**: Cron jobs and batch processes
+
+## Security Best Practices
+
+<Steps>
+  <Step title="Use least privilege">
+    Grant minimal scopes required for the task:
+    
+    ```json
+    // Good: Specific scope for trace ingestion
+    {"scopes": ["traces:write"]}
+    
+    // Bad: Overly broad permissions
+    {"scopes": ["admin"]}
+    ```
+  </Step>
+  
+  <Step title="Set expiration dates">
+    Configure expiration for temporary keys:
+    
+    ```json
+    {
+      "name": "Q1 Testing",
+      "expiresAt": "2024-03-31T23:59:59Z"
+    }
+    ```
+  </Step>
+  
+  <Step title="Store securely">
+    Never hardcode API keys:
+    
+    ```python
+    # Good: Use environment variables
+    api_key = os.environ["PHOENIX_API_KEY"]
+    
+    # Bad: Hardcoded in source
+    api_key = "px_live_abc123..."  # Don't do this!
+    ```
+  </Step>
+  
+  <Step title="Rotate regularly">
+    Rotate keys periodically (e.g., every 90 days):
+    
+    ```bash
+    # Automated rotation script
+    #!/bin/bash
+    NEW_KEY=$(curl -X POST ... | jq -r '.key')
+    kubectl create secret generic phoenix-key --from-literal=api_key=$NEW_KEY
+    ```
+  </Step>
+  
+  <Step title="Monitor usage">
+    Track API key usage in access logs:
+    
+    - Review "Last Used" timestamps
+    - Revoke unused keys
+    - Alert on unexpected usage patterns
+  </Step>
+  
+  <Step title="Use separate keys per environment">
+    Create distinct keys for development, staging, and production:
+    
+    ```yaml
+    Development: px_test_...
+    Staging: px_staging_...
+    Production: px_live_...
+    ```
+  </Step>
+</Steps>
+
+## API Key Prefixes
+
+Phoenix uses different prefixes to identify key types:
+
+- `px_live_`: Production keys
+- `px_test_`: Development/testing keys
+- `px_sys_`: System API keys (Enterprise)
+
+## Rate Limits
+
+API keys are subject to rate limits based on your plan:
+
+### Free Tier
+
+- **Trace ingestion**: 100 requests/minute
+- **API calls**: 60 requests/minute
+- **Concurrent requests**: 5
+
+### Pro Tier
+
+- **Trace ingestion**: 1,000 requests/minute
+- **API calls**: 300 requests/minute
+- **Concurrent requests**: 20
+
+### Enterprise Tier
+
+- **Trace ingestion**: Custom (unlimited available)
+- **API calls**: Custom
+- **Concurrent requests**: Custom
+
+### Rate Limit Headers
+
+Responses include rate limit information:
+
+```http
+HTTP/1.1 200 OK
+X-RateLimit-Limit: 1000
+X-RateLimit-Remaining: 987
+X-RateLimit-Reset: 1643720400
+```
+
+When rate limit is exceeded:
+
+```http
+HTTP/1.1 429 Too Many Requests
+Retry-After: 60
+
+{
+  "error": "Rate limit exceeded. Try again in 60 seconds."
+}
+```
+
+## Monitoring API Key Usage
+
+### Usage Metrics
+
+Track API key usage in Settings > API Keys:
+
+- Total requests
+- Requests by endpoint
+- Error rate
+- Last used timestamp
+- Geographic distribution (Enterprise)
+
+### Access Logs
+
+View detailed access logs:
+
+```bash
+curl -H "Authorization: Bearer YOUR_KEY" \
+  "https://app.phoenix.arize.com/api/v1/audit-logs?api_key_id=key_abc123"
+```
+
+### Alerts
+
+Configure alerts for:
+
+- Unused keys (no activity in 30 days)
+- High error rate (>5% errors)
+- Unexpected geographic access
+- Keys nearing expiration
+
+## Troubleshooting
+
+### Authentication Failed
+
+Check:
+
+1. **Key format**: Ensure key includes prefix (e.g., `px_live_...`)
+2. **Header format**: Use `Authorization: Bearer YOUR_KEY` or `api_key: YOUR_KEY`
+3. **Key status**: Verify key hasn't been revoked or expired
+4. **Permissions**: Check key has required scopes
+
+### Rate Limit Exceeded
+
+Solutions:
+
+1. **Implement backoff**: Retry with exponential backoff
+   ```python
+   import time
+   from requests.exceptions import HTTPError
+   
+   def retry_with_backoff(func, max_retries=3):
+       for i in range(max_retries):
+           try:
+               return func()
+           except HTTPError as e:
+               if e.response.status_code == 429:
+                   wait_time = 2 ** i
+                   time.sleep(wait_time)
+               else:
+                   raise
+   ```
+
+2. **Batch requests**: Combine multiple operations
+3. **Upgrade plan**: Contact sales for higher limits
+
+### Scope Errors
+
+If you receive a 403 Forbidden:
+
+1. Check required scope for endpoint
+2. Verify key has necessary scope
+3. Regenerate key with correct scopes
+
+## API Reference
+
+### Create API Key
+
+```http
+POST /api/v1/api-keys
+```
+
+Request:
+```json
+{
+  "name": "string",
+  "description": "string",
+  "expiresAt": "2024-12-31T23:59:59Z",
+  "scopes": ["traces:write", "projects:read"]
+}
+```
+
+Response:
+```json
+{
+  "id": "key_abc123",
+  "key": "px_live_abc123...",
+  "name": "string",
+  "createdAt": "2024-01-15T10:30:00Z"
+}
+```
+
+### List API Keys
+
+```http
+GET /api/v1/api-keys
+```
+
+### Get API Key Details
+
+```http
+GET /api/v1/api-keys/:id
+```
+
+### Revoke API Key
+
+```http
+DELETE /api/v1/api-keys/:id
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="lock" href="/deployment/authentication">
+    Configure SSO and user management
+  </Card>
+  
+  <Card title="Security" icon="shield" href="/deployment/security">
+    Learn about encryption and security
+  </Card>
+  
+  <Card title="Configuration" icon="gear" href="/deployment/configuration">
+    View all configuration options
+  </Card>
+</CardGroup>

@@ -1,0 +1,431 @@
+---
+title: Datasets
+description: Version-controlled datasets for experiments, evaluation, and fine-tuning with support for creating from production traces
+---
+
+Phoenix datasets provide a structured way to manage test cases, golden datasets, and evaluation sets with built-in versioning. Datasets are the foundation for running experiments and systematic testing of LLM applications.
+
+## What are Datasets?
+
+A **dataset** in Phoenix is a versioned collection of **examples**—input/output pairs with optional metadata. Each example represents a test case or reference data point for your LLM application.
+
+Datasets support:
+- **Input/Output pairs**: Questions and expected answers
+- **Metadata**: Additional context like difficulty level, category, or source
+- **Versioning**: Track changes over time with immutable versions
+- **Export formats**: Share datasets for fine-tuning or external tools
+
+## Dataset Structure
+
+### Examples
+
+Each example (from `src/phoenix/experiments/types.py`) contains:
+
+```python
+from phoenix.experiments.types import Example
+from datetime import datetime
+
+example = Example(
+    id="example-123",
+    input={"query": "What is Phoenix?"},
+    output={"answer": "Phoenix is an LLM observability platform"},
+    metadata={"difficulty": "easy", "category": "product"},
+    updated_at=datetime.now()
+)
+```
+
+**Fields**:
+- `id`: Unique identifier for the example
+- `input`: Dictionary of input values (e.g., user query, context)
+- `output`: Expected or reference output (golden answer)
+- `metadata`: Additional attributes for filtering and analysis
+- `updated_at`: Timestamp of last modification
+
+### Dataset Object
+
+Datasets (from `src/phoenix/experiments/types.py`) group examples with version tracking:
+
+```python
+from phoenix.experiments.types import Dataset
+
+dataset = Dataset(
+    id="dataset-456",
+    version_id="v1-789",
+    examples={
+        "example-1": example1,
+        "example-2": example2,
+        "example-3": example3
+    }
+)
+```
+
+## Creating Datasets
+
+### From the Phoenix Client
+
+Create datasets programmatically using the Phoenix client:
+
+```python
+import phoenix as px
+
+client = px.Client()
+
+# Create a new dataset
+dataset = client.create_dataset(
+    name="customer-support-qa",
+    description="QA pairs for customer support chatbot"
+)
+
+# Add examples
+examples = [
+    {
+        "input": {"query": "How do I reset my password?"},
+        "output": {"answer": "Click 'Forgot Password' on the login page..."},
+        "metadata": {"category": "authentication"}
+    },
+    {
+        "input": {"query": "What are your business hours?"},
+        "output": {"answer": "We're open Monday-Friday, 9am-5pm EST."},
+        "metadata": {"category": "general"}
+    }
+]
+
+for example_data in examples:
+    dataset.add_example(**example_data)
+```
+
+### From Production Traces
+
+One of the most powerful features is creating datasets directly from production traces using `TraceDataset` (from `src/phoenix/trace/trace_dataset.py`):
+
+<Steps>
+  <Step title="Export traces to TraceDataset">
+    ```python
+    from phoenix.trace import TraceDataset
+    import phoenix as px
+    
+    client = px.Client()
+    
+    # Get traces from a project
+    spans_df = client.get_spans_dataframe(
+        project_name="production-chatbot",
+        start_time="2024-01-01",
+        end_time="2024-01-31"
+    )
+    
+    # Create TraceDataset
+    trace_ds = TraceDataset(dataframe=spans_df)
+    ```
+  </Step>
+  
+  <Step title="Filter interesting traces">
+    ```python
+    # Filter for high-quality interactions
+    filtered_df = trace_ds.dataframe[
+        (trace_ds.dataframe['attributes.user_rating'] >= 4) &
+        (trace_ds.dataframe['span_kind'] == 'LLM')
+    ]
+    ```
+  </Step>
+  
+  <Step title="Convert to dataset examples">
+    ```python
+    # Extract input/output pairs from spans
+    examples = []
+    for _, span in filtered_df.iterrows():
+        examples.append({
+            "input": {
+                "query": span.get('attributes.input.value', '')
+            },
+            "output": {
+                "answer": span.get('attributes.output.value', '')
+            },
+            "metadata": {
+                "span_id": span['context.span_id'],
+                "model": span.get('attributes.llm.model_name', '')
+            }
+        })
+    
+    # Create dataset from examples
+    dataset = client.create_dataset(
+        name="production-golden-set",
+        description="Curated from high-rated production interactions"
+    )
+    
+    for example in examples:
+        dataset.add_example(**example)
+    ```
+  </Step>
+</Steps>
+
+### From CSV or JSON
+
+Import datasets from external files:
+
+```python
+import pandas as pd
+import phoenix as px
+
+client = px.Client()
+
+# From CSV
+df = pd.read_csv("qa_dataset.csv")
+dataset = client.create_dataset(name="imported-qa")
+
+for _, row in df.iterrows():
+    dataset.add_example(
+        input={"query": row['question']},
+        output={"answer": row['expected_answer']},
+        metadata={"source": "csv_import"}
+    )
+
+# From JSON
+import json
+
+with open("dataset.json") as f:
+    data = json.load(f)
+
+dataset = client.create_dataset(name="json-import")
+for item in data:
+    dataset.add_example(
+        input=item['input'],
+        output=item['output'],
+        metadata=item.get('metadata', {})
+    )
+```
+
+## Dataset Versioning
+
+Phoenix automatically versions datasets when you make changes:
+
+### Creating New Versions
+
+```python
+# Get existing dataset
+dataset = client.get_dataset(name="customer-support-qa")
+
+# Add or modify examples (creates new version)
+dataset.add_example(
+    input={"query": "How do I upgrade my plan?"},
+    output={"answer": "Navigate to Settings > Billing..."},
+    metadata={"category": "billing"}
+)
+
+print(f"Current version: {dataset.version_id}")
+```
+
+### Accessing Versions
+
+```python
+# List all versions
+versions = client.list_dataset_versions(
+    dataset_id=dataset.id
+)
+
+for version in versions:
+    print(f"Version {version.id}: {version.created_at}")
+
+# Load specific version
+old_version = client.get_dataset(
+    dataset_id=dataset.id,
+    version_id="v1-abc123"
+)
+```
+
+### Version Comparison
+
+```python
+# Compare two versions
+v1 = client.get_dataset(dataset_id=dataset.id, version_id="v1")
+v2 = client.get_dataset(dataset_id=dataset.id, version_id="v2")
+
+v1_ids = set(v1.examples.keys())
+v2_ids = set(v2.examples.keys())
+
+added = v2_ids - v1_ids
+removed = v1_ids - v2_ids
+modified = [
+    ex_id for ex_id in v1_ids & v2_ids
+    if v1.examples[ex_id] != v2.examples[ex_id]
+]
+
+print(f"Added: {len(added)}, Removed: {len(removed)}, Modified: {len(modified)}")
+```
+
+## Working with Datasets
+
+### Retrieving Datasets
+
+```python
+import phoenix as px
+
+client = px.Client()
+
+# Get dataset by name (latest version)
+dataset = client.get_dataset(name="customer-support-qa")
+
+# Get specific version
+dataset = client.get_dataset(
+    name="customer-support-qa",
+    version_id="v2-xyz789"
+)
+
+# List all datasets
+datasets = client.list_datasets()
+for ds in datasets:
+    print(f"{ds.name}: {len(ds.examples)} examples")
+```
+
+### Filtering Examples
+
+```python
+# Filter by metadata
+auth_examples = {
+    ex_id: ex for ex_id, ex in dataset.examples.items()
+    if ex.metadata.get('category') == 'authentication'
+}
+
+print(f"Found {len(auth_examples)} authentication examples")
+
+# Filter by date
+from datetime import datetime, timedelta
+
+recent_cutoff = datetime.now() - timedelta(days=7)
+recent_examples = {
+    ex_id: ex for ex_id, ex in dataset.examples.items()
+    if ex.updated_at > recent_cutoff
+}
+```
+
+### Updating Examples
+
+```python
+# Update an existing example
+dataset.update_example(
+    example_id="example-123",
+    output={"answer": "Updated answer with more detail..."},
+    metadata={"reviewed": True, "reviewer": "alice"}
+)
+
+# Delete an example
+dataset.delete_example(example_id="example-456")
+```
+
+## Exporting Datasets
+
+### Export for Fine-Tuning
+
+Convert datasets to formats required by LLM providers:
+
+```python
+# Export to OpenAI fine-tuning format (JSONL)
+import json
+
+with open("finetune_data.jsonl", "w") as f:
+    for example in dataset.examples.values():
+        line = {
+            "messages": [
+                {"role": "user", "content": example.input.get('query', '')},
+                {"role": "assistant", "content": example.output.get('answer', '')}
+            ]
+        }
+        f.write(json.dumps(line) + "\n")
+```
+
+### Export to DataFrame
+
+```python
+import pandas as pd
+
+# Convert to pandas DataFrame
+records = []
+for example in dataset.examples.values():
+    records.append({
+        'id': example.id,
+        'query': example.input.get('query', ''),
+        'answer': example.output.get('answer', ''),
+        **example.metadata
+    })
+
+df = pd.DataFrame(records)
+df.to_csv('dataset_export.csv', index=False)
+```
+
+### Save TraceDataset
+
+Persist trace-based datasets with evaluations:
+
+```python
+from phoenix.trace import TraceDataset, SpanEvaluations
+
+# Create dataset with evaluations
+trace_ds = TraceDataset(
+    dataframe=spans_df,
+    name="evaluated-traces",
+    evaluations=[evaluations]
+)
+
+# Save to disk (includes evaluations)
+dataset_id = trace_ds.save(directory="./trace_datasets")
+
+# Load later
+loaded = TraceDataset.load(
+    id=dataset_id,
+    directory="./trace_datasets"
+)
+```
+
+## Using Datasets in Experiments
+
+Datasets power Phoenix's experiment system (see [Experiments](/features/experiments)):
+
+```python
+from phoenix.experiments import run_experiment
+
+def my_task(input):
+    # Your LLM application logic
+    query = input['query']
+    response = model.generate(query)
+    return {"answer": response}
+
+result = run_experiment(
+    dataset=dataset,
+    task=my_task,
+    experiment_name="gpt-4-baseline"
+)
+```
+
+Experiments run your task on every example in the dataset and track results for comparison.
+
+## Best Practices
+
+<Note>
+  **Start Small**: Begin with 10-20 high-quality examples and expand based on coverage needs.
+</Note>
+
+**Curate from Production**: Use real user interactions to build datasets that reflect actual usage patterns.
+
+**Add Metadata**: Tag examples with categories, difficulty, or source to enable filtering and analysis.
+
+**Version Regularly**: Create new versions when making significant changes to track dataset evolution.
+
+**Include Edge Cases**: Add examples for error conditions, edge cases, and challenging scenarios.
+
+**Review Regularly**: Periodically audit examples to ensure they remain relevant and accurate.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Experiments" icon="flask" href="/features/experiments">
+    Run systematic experiments on your datasets
+  </Card>
+  <Card title="Evaluation" icon="check" href="/features/evaluation">
+    Evaluate dataset examples with LLM judges
+  </Card>
+  <Card title="Tracing" icon="chart-network" href="/features/tracing">
+    Capture production traces to create datasets
+  </Card>
+  <Card title="Dataset API" icon="code" href="/api-reference/datasets">
+    Complete API reference for datasets
+  </Card>
+</CardGroup>

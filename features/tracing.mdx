@@ -1,0 +1,289 @@
+---
+title: Tracing
+description: OpenTelemetry-based tracing for LLM applications with automatic instrumentation and span hierarchy
+---
+
+Phoenix provides OpenTelemetry-based distributed tracing to give you complete visibility into your LLM application's execution. Tracing captures every step of your application—from user queries to LLM calls to retrieval operations—organized in a structured span hierarchy.
+
+## What is Tracing?
+
+Tracing records the execution path of your LLM application by creating **spans**—individual units of work that represent operations like:
+
+- LLM generation calls
+- Retrieval operations
+- Tool/function invocations
+- Chain executions
+- Embeddings generation
+
+Spans are organized hierarchically to show parent-child relationships, making it easy to understand how different parts of your application interact.
+
+## How It Works
+
+Phoenix implements the [OpenTelemetry](https://opentelemetry.io/) standard with semantic conventions specifically designed for LLM applications through the [OpenInference](https://github.com/Arize-ai/openinference) specification.
+
+### Automatic Instrumentation
+
+Phoenix provides automatic instrumentation for popular LLM frameworks with zero code changes:
+
+<CardGroup cols={2}>
+  <Card title="OpenAI" icon="robot">
+    Automatically trace all OpenAI API calls
+  </Card>
+  <Card title="LangChain" icon="link">
+    Capture chain execution and component interactions
+  </Card>
+  <Card title="LlamaIndex" icon="database">
+    Trace queries, retrievals, and index operations
+  </Card>
+  <Card title="Anthropic" icon="message">
+    Monitor Claude API interactions
+  </Card>
+</CardGroup>
+
+<Steps>
+  <Step title="Install instrumentation">
+    Install the instrumentation package for your framework:
+    
+    ```bash
+    pip install openinference-instrumentation-openai
+    ```
+  </Step>
+  
+  <Step title="Configure instrumentation">
+    Add a few lines to instrument your application:
+    
+    ```python
+    from openinference.instrumentation.openai import OpenAIInstrumentor
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    
+    # Configure the tracer provider
+    tracer_provider = TracerProvider()
+    tracer_provider.add_span_processor(
+        SimpleSpanProcessor(OTLPSpanExporter("http://localhost:6006/v1/traces"))
+    )
+    
+    # Instrument OpenAI
+    OpenAIInstrumentor().instrument(tracer_provider=tracer_provider)
+    ```
+  </Step>
+  
+  <Step title="Run your application">
+    Execute your application normally—traces will be automatically captured and sent to Phoenix.
+  </Step>
+</Steps>
+
+### Span Hierarchy
+
+Spans are organized in a tree structure based on the `trace_id` and `parent_id` attributes defined in `/home/daytona/workspace/source/src/phoenix/trace/attributes.py`. Each span contains:
+
+- **Context**: `span_id`, `trace_id` for linking spans together
+- **Timing**: `start_time`, `end_time` for performance analysis
+- **Metadata**: `name`, `span_kind`, `status_code` for categorization
+- **Attributes**: Nested key-value pairs with LLM-specific data
+
+```python
+# Example span structure
+{
+  "context.trace_id": "abc123...",
+  "context.span_id": "def456...",
+  "parent_id": "parent789...",
+  "name": "ChatCompletion",
+  "span_kind": "LLM",
+  "attributes": {
+    "llm.model_name": "gpt-4",
+    "llm.token_count.prompt": 150,
+    "llm.token_count.completion": 75,
+    "input.value": "What is Phoenix?",
+    "output.value": "Phoenix is an observability platform..."
+  }
+}
+```
+
+### Span Attributes
+
+Phoenix uses a sophisticated attribute system (implemented in `src/phoenix/trace/attributes.py`) that supports:
+
+**Flattened Keys**: Dot-separated paths like `llm.token_count.completion` are automatically unflattened into nested structures:
+
+```python
+# Flattened format (as received from OpenTelemetry)
+{"llm.token_count.completion": 123}
+
+# Unflattened format (used internally)
+{"llm": {"token_count": {"completion": 123}}}
+```
+
+**Array Support**: Numeric indices create arrays for structured data:
+
+```python
+# Flattened
+{
+  "retrieval.documents.0.content": "First doc",
+  "retrieval.documents.1.content": "Second doc"
+}
+
+# Unflattened
+{
+  "retrieval": {
+    "documents": [
+      {"content": "First doc"},
+      {"content": "Second doc"}
+    ]
+  }
+}
+```
+
+## Projects and Sessions
+
+Phoenix organizes traces using **projects** and **sessions**:
+
+### Projects
+
+Projects group related traces together. Set the project name via the `ResourceAttributes.PROJECT_NAME` attribute:
+
+```python
+from openinference.semconv.resource import ResourceAttributes
+from opentelemetry.sdk.resources import Resource
+
+resource = Resource({
+    ResourceAttributes.PROJECT_NAME: "chatbot-production"
+})
+```
+
+You can also dynamically switch projects using the `using_project` context manager (from `src/phoenix/trace/projects.py`):
+
+```python
+from phoenix.trace import using_project
+
+with using_project('experiment-1'):
+    # All spans here are tagged with 'experiment-1'
+    client.chat.completions.create(...)
+```
+
+<Note>
+  The `using_project` context manager is deprecated and has been moved to `openinference-instrumentation`. Use it only in notebook environments for quick experimentation.
+</Note>
+
+### Sessions
+
+Sessions group traces within a project, typically representing a single user interaction or conversation thread. Sessions are identified by metadata attributes added to spans.
+
+## Key Features
+
+### Rich Metadata
+
+Capture comprehensive details about each operation:
+
+- **LLM calls**: Model name, token counts, prompts, completions, parameters
+- **Retrievals**: Documents, scores, queries
+- **Tools**: Function names, parameters, results
+- **Errors**: Stack traces and error messages
+
+### Performance Insights
+
+Analyze latency at every level:
+
+- Total trace duration
+- Individual span timings  
+- Time spent in LLM calls vs. retrieval vs. processing
+
+### Evaluation Integration
+
+Traces can be evaluated using the evaluation system (see [Evaluation](/features/evaluation)). Attach evaluations directly to spans:
+
+```python
+from phoenix.trace import SpanEvaluations
+import pandas as pd
+
+evaluations = SpanEvaluations(
+    eval_name="relevance",
+    dataframe=pd.DataFrame({
+        "span_id": ["span1", "span2"],
+        "score": [1.0, 0.8],
+        "label": ["relevant", "relevant"]
+    })
+)
+```
+
+## Working with Traces
+
+### Export Traces
+
+Export traces to datasets for offline analysis using the `TraceDataset` class (from `src/phoenix/trace/trace_dataset.py`):
+
+```python
+from phoenix.trace import TraceDataset
+import pandas as pd
+
+# Create dataset from dataframe
+trace_ds = TraceDataset(
+    dataframe=spans_df,
+    name="production-traces-2024-03"
+)
+
+# Save to disk
+trace_ds.save()
+
+# Load later
+loaded_ds = TraceDataset.load(trace_ds._id)
+```
+
+### Create Datasets from Traces
+
+Convert production traces into evaluation datasets (see [Datasets](/features/datasets)):
+
+```python
+# Filter interesting traces
+filtered_spans = trace_ds.dataframe[
+    trace_ds.dataframe['attributes.llm.model_name'] == 'gpt-4'
+]
+
+# Create new dataset
+new_dataset = TraceDataset(filtered_spans)
+```
+
+### Query Traces
+
+Access trace data programmatically via the Phoenix client:
+
+```python
+import phoenix as px
+
+client = px.Client()
+traces = client.get_traces(
+    project_name="my-project",
+    start_time="2024-01-01",
+    end_time="2024-01-31"
+)
+```
+
+## Suppressing Tracing
+
+Temporarily disable tracing for specific code sections using `suppress_tracing` (from `openinference.instrumentation`):
+
+```python
+from openinference.instrumentation import suppress_tracing
+
+with suppress_tracing():
+    # This LLM call won't be traced
+    response = client.chat.completions.create(...)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Evaluation" icon="check" href="/features/evaluation">
+    Learn how to evaluate traced spans with LLM judges
+  </Card>
+  <Card title="Datasets" icon="database" href="/features/datasets">
+    Create versioned datasets from your traces
+  </Card>
+  <Card title="Experiments" icon="flask" href="/features/experiments">
+    Run systematic experiments on your LLM application
+  </Card>
+  <Card title="Instrumentation Guide" icon="book" href="/tracing">
+    Detailed instrumentation setup for all frameworks
+  </Card>
+</CardGroup>

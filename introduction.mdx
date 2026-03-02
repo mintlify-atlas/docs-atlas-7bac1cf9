@@ -1,0 +1,157 @@
+---
+title: Introduction to Phoenix
+description: Open-source AI observability platform for experimentation, evaluation, and troubleshooting
+---
+
+<img
+  className="block"
+  src="https://github.com/Arize-ai/phoenix-assets/blob/main/images/socal/github-large-banner-phoenix-v2.jpg?raw=true"
+  alt="Phoenix Banner"
+/>
+
+Phoenix is an open-source AI observability platform designed for experimentation, evaluation, and troubleshooting. Whether you're building chatbots, RAG applications, or AI agents, Phoenix gives you the visibility and tools you need to ship production-ready LLM applications.
+
+## What is Phoenix?
+
+Phoenix provides a comprehensive suite of tools for understanding and improving your LLM applications:
+
+<CardGroup cols={2}>
+  <Card
+    title="Tracing"
+    icon="diagram-project"
+    href="/tracing/overview"
+  >
+    Trace your LLM application's runtime using OpenTelemetry-based instrumentation. See every LLM call, retrieval step, and tool usage.
+  </Card>
+  
+  <Card
+    title="Evaluation"
+    icon="clipboard-check"
+    href="/evaluation/overview"
+  >
+    Leverage LLMs to benchmark your application's performance using response and retrieval evals.
+  </Card>
+  
+  <Card
+    title="Datasets"
+    icon="database"
+    href="/datasets/overview"
+  >
+    Create versioned datasets of examples for experimentation, evaluation, and fine-tuning.
+  </Card>
+  
+  <Card
+    title="Experiments"
+    icon="flask"
+    href="/datasets/experiments"
+  >
+    Track and evaluate changes to prompts, LLMs, and retrieval configurations.
+  </Card>
+  
+  <Card
+    title="Playground"
+    icon="play"
+    href="/features/playground"
+  >
+    Optimize prompts, compare models, adjust parameters, and replay traced LLM calls.
+  </Card>
+  
+  <Card
+    title="Prompt Management"
+    icon="code"
+    href="/features/prompt-management"
+  >
+    Manage and test prompt changes systematically using version control, tagging, and experimentation.
+  </Card>
+</CardGroup>
+
+## Key Features
+
+### Open Source & Vendor Agnostic
+
+Phoenix is fully open source and works with any LLM provider or framework. Out-of-the-box support includes:
+
+**Frameworks**: OpenAI Agents SDK, LangGraph, Vercel AI SDK, Mastra, CrewAI, LlamaIndex, DSPy, and more
+
+**LLM Providers**: OpenAI, Anthropic, Google GenAI, Google ADK, AWS Bedrock, LiteLLM, and more
+
+### Flexible Deployment
+
+Phoenix runs practically anywhere:
+- **Local development**: Single command to launch (`python -m phoenix.server.main serve`)
+- **Docker**: Pre-built container images available on Docker Hub
+- **Kubernetes**: Helm charts for production deployments
+- **Cloud**: Managed instances at [app.phoenix.arize.com](https://app.phoenix.arize.com)
+
+### Built on OpenTelemetry
+
+Phoenix is built on OpenTelemetry, the industry standard for observability. This means:
+- Language and framework agnostic
+- Compatible with existing observability infrastructure
+- Future-proof as OpenTelemetry continues to evolve
+- Integrates seamlessly with other OpenTelemetry-compatible tools
+
+## How Phoenix Works
+
+Phoenix captures telemetry data from your LLM applications using the OpenInference specification, an extension of OpenTelemetry designed specifically for LLMs. This data includes:
+
+- **LLM calls**: Inputs, outputs, tokens, latency, and model parameters
+- **Retrievals**: Documents fetched from vector stores and their relevance scores
+- **Tool usage**: Function calls, arguments, and results
+- **Agent traces**: Complete execution paths including reasoning steps
+
+All this data flows into Phoenix where you can:
+1. Visualize traces in an intuitive UI
+2. Run evaluations to measure quality metrics
+3. Create datasets from production examples
+4. Run experiments to test improvements
+5. Optimize prompts in the playground
+
+## Getting Started
+
+<CardGroup cols={2}>
+  <Card
+    title="Quickstart"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Get Phoenix running in 5 minutes with our quickstart guide.
+  </Card>
+  
+  <Card
+    title="Installation"
+    icon="download"
+    href="/installation"
+  >
+    Detailed installation instructions for pip, conda, Docker, and more.
+  </Card>
+  
+  <Card
+    title="Deployment"
+    icon="server"
+    href="/deployment/docker"
+  >
+    Learn about deployment options from local to production.
+  </Card>
+  
+  <Card
+    title="Tracing Integrations"
+    icon="plug"
+    href="/integrations/overview"
+  >
+    Browse integrations for your framework and LLM provider.
+  </Card>
+</CardGroup>
+
+## Community & Support
+
+Join thousands of AI builders using Phoenix:
+
+- **Slack**: Join our [community Slack](https://join.slack.com/t/arize-ai/shared_invite/zt-3r07iavnk-ammtATWSlF0pSrd1DsMW7g) for support and discussions
+- **GitHub**: Star us on [GitHub](https://github.com/Arize-ai/phoenix) and contribute
+- **Documentation**: Explore our comprehensive [docs](https://arize.com/docs/phoenix)
+- **X/Twitter**: Follow [@ArizePhoenix](https://x.com/ArizePhoenix) for updates
+
+<Note>
+  Phoenix is licensed under the Elastic License 2.0 (ELv2). It's free to use and modify, with some restrictions on providing it as a managed service.
+</Note>

@@ -1,0 +1,440 @@
+---
+title: Instrumentation
+description: Instrument your LLM applications to send traces to Phoenix
+---
+
+Phoenix supports both automatic and manual instrumentation for capturing traces from your LLM applications.
+
+## Quick Start with Auto-Instrumentation
+
+The easiest way to get started is using automatic instrumentation:
+
+```python
+from phoenix.otel import register
+
+# Automatically instrument all supported libraries
+tracer_provider = register(
+    project_name="my-llm-app",
+    auto_instrument=True
+)
+```
+
+This automatically instruments all installed OpenInference libraries including:
+- OpenAI
+- Anthropic
+- LangChain
+- LlamaIndex
+- DSPy
+- And many more
+
+## The `phoenix.otel` Module
+
+Phoenix provides a high-level `phoenix.otel` module with OpenTelemetry components that have Phoenix-aware defaults.
+
+### `register()` Function
+
+The `register()` function is the recommended way to set up tracing:
+
+```python
+from phoenix.otel import register
+
+tracer_provider = register(
+    project_name="my-app",        # Project to associate traces with
+    endpoint="http://localhost:6006",  # Phoenix endpoint
+    batch=True,                    # Use BatchSpanProcessor
+    auto_instrument=True,          # Auto-instrument libraries
+    api_key="your-api-key"        # For Phoenix Cloud
+)
+```
+
+<Note>
+  `register()` sets the global OpenTelemetry tracer provider by default. Set `set_global_tracer_provider=False` to disable this behavior.
+</Note>
+
+### Configuration Options
+
+<Tabs>
+  <Tab title="Basic">
+    ```python
+    from phoenix.otel import register
+    
+    # Minimal setup - uses environment variables
+    register(auto_instrument=True)
+    ```
+  </Tab>
+
+  <Tab title="Production">
+    ```python
+    from phoenix.otel import register
+    
+    # Production configuration with batching
+    register(
+        project_name="production-app",
+        endpoint="https://app.phoenix.arize.com",
+        api_key=os.getenv("PHOENIX_API_KEY"),
+        batch=True,
+        auto_instrument=True
+    )
+    ```
+  </Tab>
+
+  <Tab title="Custom Endpoint">
+    ```python
+    from phoenix.otel import register
+    
+    # Custom endpoint with headers
+    register(
+        endpoint="https://my-phoenix.com:6006/v1/traces",
+        headers={"Authorization": "Bearer my-token"},
+        protocol="http/protobuf",
+        auto_instrument=True
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Environment Variables
+
+Phoenix respects standard OpenTelemetry and Phoenix-specific environment variables:
+
+```bash
+# Phoenix configuration
+export PHOENIX_PROJECT_NAME="my-app"
+export PHOENIX_API_KEY="your-api-key"
+export PHOENIX_COLLECTOR_ENDPOINT="http://localhost:6006"
+
+# OpenTelemetry configuration
+export OTEL_EXPORTER_OTLP_HEADERS="authorization=Bearer token"
+export OTEL_BSP_SCHEDULE_DELAY=5000
+```
+
+## Automatic Instrumentation
+
+Automatic instrumentation works by detecting installed libraries and wrapping their APIs:
+
+<Steps>
+  <Step title="Install OpenInference Instrumentations">
+    ```bash
+    pip install openinference-instrumentation-openai
+    pip install openinference-instrumentation-langchain
+    ```
+  </Step>
+
+  <Step title="Enable Auto-Instrumentation">
+    ```python
+    from phoenix.otel import register
+    
+    register(auto_instrument=True)
+    ```
+  </Step>
+
+  <Step title="Use Your Libraries Normally">
+    ```python
+    from openai import OpenAI
+    
+    client = OpenAI()
+    response = client.chat.completions.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello!"}]
+    )
+    # Automatically traced!
+    ```
+  </Step>
+</Steps>
+
+### Supported Libraries
+
+Phoenix auto-instrumentation supports:
+
+- **LLM Providers**: OpenAI, Anthropic, Bedrock, Vertex AI, MistralAI
+- **Frameworks**: LangChain, LlamaIndex, DSPy, Haystack, CrewAI
+- **Databases**: Weaviate, Pinecone, Qdrant, Milvus, ChromaDB
+- **HTTP Clients**: httpx, requests
+
+## Manual Instrumentation
+
+For custom tracing or unsupported libraries, use manual instrumentation:
+
+### Basic Manual Tracing
+
+```python
+from opentelemetry import trace
+from openinference.semconv.trace import SpanAttributes
+
+tracer = trace.get_tracer(__name__)
+
+with tracer.start_as_current_span("my-operation") as span:
+    # Set OpenInference attributes
+    span.set_attribute(SpanAttributes.OPENINFERENCE_SPAN_KIND, "LLM")
+    span.set_attribute(SpanAttributes.INPUT_VALUE, "user input")
+    
+    # Your code here
+    result = my_function()
+    
+    span.set_attribute(SpanAttributes.OUTPUT_VALUE, result)
+```
+
+### Advanced Manual Tracing
+
+<CodeGroup>
+```python LLM Span
+from opentelemetry import trace
+from openinference.semconv.trace import SpanAttributes
+import json
+
+tracer = trace.get_tracer(__name__)
+
+with tracer.start_as_current_span("gpt4-call") as span:
+    span.set_attribute(SpanAttributes.OPENINFERENCE_SPAN_KIND, "LLM")
+    span.set_attribute(SpanAttributes.LLM_MODEL_NAME, "gpt-4")
+    
+    invocation_params = {"temperature": 0.7, "max_tokens": 100}
+    span.set_attribute(
+        SpanAttributes.LLM_INVOCATION_PARAMETERS,
+        json.dumps(invocation_params)
+    )
+    
+    # Make LLM call
+    response = call_llm()
+    
+    # Set token counts
+    span.set_attribute(SpanAttributes.LLM_TOKEN_COUNT_PROMPT, 50)
+    span.set_attribute(SpanAttributes.LLM_TOKEN_COUNT_COMPLETION, 25)
+    span.set_attribute(SpanAttributes.LLM_TOKEN_COUNT_TOTAL, 75)
+```
+
+```python Retrieval Span
+from opentelemetry import trace
+from openinference.semconv.trace import SpanAttributes
+import json
+
+tracer = trace.get_tracer(__name__)
+
+with tracer.start_as_current_span("vector-search") as span:
+    span.set_attribute(SpanAttributes.OPENINFERENCE_SPAN_KIND, "RETRIEVER")
+    span.set_attribute(SpanAttributes.INPUT_VALUE, "search query")
+    
+    # Retrieve documents
+    documents = retrieve("search query")
+    
+    # Add document attributes
+    for i, doc in enumerate(documents):
+        prefix = f"{SpanAttributes.RETRIEVAL_DOCUMENTS}.{i}"
+        span.set_attribute(
+            f"{prefix}.{DocumentAttributes.DOCUMENT_CONTENT}",
+            doc.content
+        )
+        span.set_attribute(
+            f"{prefix}.{DocumentAttributes.DOCUMENT_SCORE}",
+            doc.score
+        )
+        span.set_attribute(
+            f"{prefix}.{DocumentAttributes.DOCUMENT_METADATA}",
+            json.dumps(doc.metadata)
+        )
+```
+
+```python Custom Metadata
+from opentelemetry import trace
+from openinference.semconv.trace import SpanAttributes
+import json
+
+tracer = trace.get_tracer(__name__)
+
+with tracer.start_as_current_span("custom-operation") as span:
+    # Add custom metadata
+    metadata = {
+        "user_id": "user123",
+        "environment": "production",
+        "feature_flags": ["new_ui", "beta_model"]
+    }
+    
+    span.set_attribute(
+        SpanAttributes.METADATA,
+        json.dumps(metadata)
+    )
+```
+</CodeGroup>
+
+### Exception Handling
+
+```python
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
+
+tracer = trace.get_tracer(__name__)
+
+with tracer.start_as_current_span("risky-operation") as span:
+    try:
+        result = risky_function()
+        span.set_status(Status(StatusCode.OK))
+    except Exception as e:
+        span.record_exception(e)
+        span.set_status(Status(StatusCode.ERROR, str(e)))
+        raise
+```
+
+## Advanced Configuration
+
+### Custom TracerProvider
+
+```python
+from phoenix.otel import TracerProvider, BatchSpanProcessor, HTTPSpanExporter
+from opentelemetry.sdk.resources import Resource
+from phoenix.otel import PROJECT_NAME
+
+# Create custom resource
+resource = Resource({
+    PROJECT_NAME: "my-app",
+    "service.version": "1.0.0",
+    "deployment.environment": "production"
+})
+
+# Create provider
+provider = TracerProvider(resource=resource, verbose=False)
+
+# Add custom processor
+exporter = HTTPSpanExporter(
+    endpoint="http://localhost:6006/v1/traces",
+    headers={"x-custom-header": "value"}
+)
+processor = BatchSpanProcessor(
+    span_exporter=exporter,
+    max_queue_size=2048,
+    max_export_batch_size=512
+)
+provider.add_span_processor(processor)
+
+# Set as global
+from opentelemetry import trace
+trace.set_tracer_provider(provider)
+```
+
+### Span Processors
+
+Phoenix provides two span processors:
+
+<Tabs>
+  <Tab title="SimpleSpanProcessor">
+    ```python
+    from phoenix.otel import SimpleSpanProcessor, HTTPSpanExporter
+    
+    # Exports spans immediately (not recommended for production)
+    processor = SimpleSpanProcessor(
+        endpoint="http://localhost:6006/v1/traces"
+    )
+    ```
+    
+    <Warning>
+      SimpleSpanProcessor exports spans synchronously, which can impact application performance. Use only for development and debugging.
+    </Warning>
+  </Tab>
+
+  <Tab title="BatchSpanProcessor">
+    ```python
+    from phoenix.otel import BatchSpanProcessor, HTTPSpanExporter
+    
+    # Batches spans for efficient export (recommended)
+    processor = BatchSpanProcessor(
+        endpoint="http://localhost:6006/v1/traces",
+        max_queue_size=2048,
+        max_export_batch_size=512,
+        schedule_delay_millis=5000
+    )
+    ```
+    
+    Recommended for production. Batches spans and exports them periodically.
+  </Tab>
+</Tabs>
+
+## Protocol Selection
+
+<CodeGroup>
+```python HTTP (Recommended)
+from phoenix.otel import register
+
+register(
+    endpoint="http://localhost:6006/v1/traces",
+    protocol="http/protobuf",
+    auto_instrument=True
+)
+```
+
+```python gRPC
+from phoenix.otel import register
+
+register(
+    endpoint="http://localhost:4317",
+    protocol="grpc",
+    auto_instrument=True
+)
+```
+</CodeGroup>
+
+<Note>
+  Phoenix automatically infers the protocol from the endpoint URL. HTTP endpoints typically end with `/v1/traces`, while gRPC endpoints use port 4317.
+</Note>
+
+## Verify Instrumentation
+
+After instrumenting your application:
+
+<Steps>
+  <Step title="Check Console Output">
+    Look for the tracing configuration message:
+    ```
+    🔭 OpenTelemetry Tracing Details 🔭
+    |  Phoenix Project: my-app
+    |  Span Processor: BatchSpanProcessor
+    |  Collector Endpoint: http://localhost:6006/v1/traces
+    |  Transport: HTTP + protobuf
+    ```
+  </Step>
+
+  <Step title="Run Your Application">
+    Execute operations that should generate traces.
+  </Step>
+
+  <Step title="View in Phoenix UI">
+    Open Phoenix UI at http://localhost:6006 and verify traces appear.
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### Traces Not Appearing
+
+1. Verify Phoenix is running and accessible
+2. Check endpoint URL is correct
+3. Ensure firewall allows traffic to Phoenix
+4. Look for error messages in console
+
+### Performance Impact
+
+1. Use `BatchSpanProcessor` instead of `SimpleSpanProcessor`
+2. Reduce `max_export_batch_size` if memory is constrained
+3. Increase `schedule_delay_millis` for less frequent exports
+
+### Suppressing Tracing
+
+Temporarily disable tracing for specific operations:
+
+```python
+from openinference.instrumentation import suppress_tracing
+
+with suppress_tracing():
+    # This won't be traced
+    result = function_call()
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Projects" icon="folder" href="/tracing/projects">
+    Organize traces with projects
+  </Card>
+  
+  <Card title="Sessions" icon="users" href="/tracing/sessions">
+    Group related traces into sessions
+  </Card>
+</CardGroup>

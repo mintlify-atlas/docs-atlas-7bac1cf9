@@ -1,0 +1,326 @@
+---
+title: "OpenTelemetry Integration"
+description: Use OpenTelemetry primitives to build custom instrumentation for your LLM applications
+---
+
+Phoenix is built on **OpenTelemetry**, the industry-standard observability framework. This means you can use OpenTelemetry's powerful primitives to build custom instrumentation for any LLM application, regardless of the framework or SDK.
+
+## How Phoenix Uses OpenTelemetry
+
+Phoenix leverages OpenTelemetry in several key ways:
+
+1. **OTLP Protocol**: Phoenix receives traces via the OpenTelemetry Protocol (OTLP)
+2. **OpenInference Conventions**: Traces follow semantic conventions optimized for LLM observability
+3. **Auto-instrumentation**: Framework integrations use OpenTelemetry instrumentors
+4. **Custom spans**: You can create custom spans using OpenTelemetry APIs
+
+## OTLP Endpoints
+
+Phoenix exposes OTLP endpoints for receiving trace data:
+
+| Protocol | Endpoint | Default Port |
+|----------|----------|-------------|
+| **HTTP** | `http://localhost:6006/v1/traces` | 6006 |
+| **gRPC** | `grpc://localhost:4317` | 4317 |
+
+### Configuration
+
+You can configure the OTLP exporter when registering Phoenix:
+
+<CodeGroup>
+```python Python (HTTP)
+from phoenix.otel import register
+
+tracer_provider = register(
+    endpoint="http://localhost:6006/v1/traces",
+    protocol="http/protobuf",  # or "grpc"
+    project_name="my-app"
+)
+```
+
+```python Python (gRPC)
+from phoenix.otel import register
+
+tracer_provider = register(
+    endpoint="http://localhost:4317",
+    protocol="grpc",
+    project_name="my-app"
+)
+```
+
+```typescript TypeScript
+import { register } from "@arizeai/phoenix-otel";
+
+const tracerProvider = register({
+  url: "http://localhost:6006",  // Phoenix URL
+  projectName: "my-app",
+});
+```
+</CodeGroup>
+
+### Environment Variables
+
+You can also configure OTLP using standard OpenTelemetry environment variables:
+
+```bash
+# HTTP Protocol
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:6006
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+
+# gRPC Protocol
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+export OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+
+# Authentication (if using cloud Phoenix)
+export OTEL_EXPORTER_OTLP_HEADERS="api_key=your-api-key"
+```
+
+## Custom Instrumentation
+
+While Phoenix provides auto-instrumentation for popular frameworks, you can create custom spans for any code using OpenTelemetry.
+
+### Basic Custom Spans
+
+<CodeGroup>
+```python Python
+from phoenix.otel import register
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
+
+# Register Phoenix
+tracer_provider = register(project_name="custom-app")
+tracer = tracer_provider.get_tracer(__name__)
+
+# Create a custom span
+with tracer.start_as_current_span("my-custom-operation") as span:
+    span.set_attribute("custom.attribute", "value")
+    
+    # Your code here
+    result = perform_operation()
+    
+    span.set_attribute("result", result)
+    span.set_status(Status(StatusCode.OK))
+```
+
+```typescript TypeScript
+import { register } from "@arizeai/phoenix-otel";
+import { trace, SpanStatusCode } from "@opentelemetry/api";
+
+const tracerProvider = register({ projectName: "custom-app" });
+const tracer = trace.getTracer("my-app");
+
+// Create a custom span
+const span = tracer.startSpan("my-custom-operation");
+span.setAttribute("custom.attribute", "value");
+
+try {
+  // Your code here
+  const result = performOperation();
+  
+  span.setAttribute("result", result);
+  span.setStatus({ code: SpanStatusCode.OK });
+} finally {
+  span.end();
+}
+```
+</CodeGroup>
+
+### OpenInference Span Kinds
+
+For LLM applications, use OpenInference semantic conventions to get rich UI visualization:
+
+<CodeGroup>
+```python Python
+from phoenix.otel import register
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
+
+tracer_provider = register()
+tracer = tracer_provider.get_tracer(__name__)
+
+# LLM Span
+with tracer.start_as_current_span(
+    "llm-call",
+    attributes={
+        "openinference.span.kind": "LLM",
+        "llm.model_name": "gpt-4",
+        "llm.invocation_parameters": '{"temperature": 0.7}',
+    }
+) as span:
+    response = call_llm()
+    span.set_attribute("llm.token_count.total", response.usage.total_tokens)
+    span.set_status(Status(StatusCode.OK))
+
+# Retriever Span
+with tracer.start_as_current_span(
+    "retrieval",
+    attributes={
+        "openinference.span.kind": "RETRIEVER",
+    }
+) as span:
+    docs = retrieve_documents(query)
+    span.set_attribute("retrieval.documents", str([doc.text for doc in docs]))
+```
+
+```typescript TypeScript
+import { trace, SpanStatusCode } from "@opentelemetry/api";
+
+const tracer = trace.getTracer("my-app");
+
+// LLM Span
+const llmSpan = tracer.startSpan("llm-call", {
+  attributes: {
+    "openinference.span.kind": "LLM",
+    "llm.model_name": "gpt-4",
+    "llm.invocation_parameters": JSON.stringify({ temperature: 0.7 }),
+  }
+});
+
+try {
+  const response = await callLLM();
+  llmSpan.setAttribute("llm.token_count.total", response.usage.total_tokens);
+  llmSpan.setStatus({ code: SpanStatusCode.OK });
+} finally {
+  llmSpan.end();
+}
+
+// Retriever Span
+const retrieverSpan = tracer.startSpan("retrieval", {
+  attributes: {
+    "openinference.span.kind": "RETRIEVER",
+  }
+});
+
+try {
+  const docs = await retrieveDocuments(query);
+  retrieverSpan.setAttribute("retrieval.documents", JSON.stringify(docs.map(d => d.text)));
+} finally {
+  retrieverSpan.end();
+}
+```
+</CodeGroup>
+
+### Available Span Kinds
+
+| Span Kind | Description | Use Case |
+|-----------|-------------|----------|
+| `LLM` | Language model inference | GPT calls, Claude calls |
+| `CHAIN` | Sequence of operations | LangChain chains, pipelines |
+| `AGENT` | Autonomous reasoning | ReAct agents, function calling |
+| `TOOL` | External function call | API calls, calculations |
+| `RETRIEVER` | Document retrieval | Vector search, database query |
+| `EMBEDDING` | Embedding generation | Text embeddings |
+| `RERANKER` | Document reranking | Cross-encoder reranking |
+| `GUARDRAIL` | Safety checks | Content filtering |
+| `EVALUATOR` | Quality assessment | LLM-as-a-judge |
+
+### Using Helper Functions
+
+Phoenix provides helper decorators and context managers:
+
+<CodeGroup>
+```python Python
+from phoenix.otel import register
+
+tracer_provider = register()
+tracer = tracer_provider.get_tracer(__name__)
+
+# Decorator for functions
+@tracer.chain
+def my_chain(input_text: str) -> str:
+    """This function will automatically be traced as a CHAIN span."""
+    return process(input_text)
+
+@tracer.tool
+def my_tool(query: str) -> dict:
+    """This function will automatically be traced as a TOOL span."""
+    return {"result": query_api(query)}
+
+@tracer.llm
+def my_llm_call(prompt: str) -> str:
+    """This function will automatically be traced as an LLM span."""
+    return call_llm(prompt)
+```
+
+```typescript TypeScript
+import { traceChain, traceTool } from "@arizeai/openinference-core";
+
+// Wrapper for functions
+const myChain = traceChain(
+  (inputText: string): string => {
+    return process(inputText);
+  },
+  { name: "my-chain" }
+);
+
+const myTool = traceTool(
+  (query: string): object => {
+    return { result: queryApi(query) };
+  },
+  { name: "my-tool" }
+);
+```
+</CodeGroup>
+
+## Headers and Authentication
+
+For cloud deployments or secured Phoenix instances, add authentication headers:
+
+<CodeGroup>
+```python Python
+from phoenix.otel import register
+
+tracer_provider = register(
+    endpoint="https://app.phoenix.arize.com/v1/traces",
+    headers={"api_key": "your-api-key"},
+    project_name="my-app"
+)
+```
+
+```typescript TypeScript
+import { register } from "@arizeai/phoenix-otel";
+
+const tracerProvider = register({
+  url: "https://app.phoenix.arize.com",
+  apiKey: "your-api-key",
+  projectName: "my-app",
+});
+```
+
+```bash Environment Variables
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://app.phoenix.arize.com
+export OTEL_EXPORTER_OTLP_HEADERS="api_key=your-api-key"
+```
+</CodeGroup>
+
+## Batching and Performance
+
+Phoenix uses OpenTelemetry's batching for efficient trace export:
+
+```python
+from phoenix.otel import register
+
+tracer_provider = register(
+    project_name="my-app",
+    # Batch settings
+    batch_size=512,  # Max spans per batch
+    schedule_delay=5000,  # Max delay in ms
+)
+```
+
+## Resources
+
+<CardGroup cols={2}>
+  <Card title="OpenInference Spec" icon="book" href="https://github.com/Arize-ai/openinference">
+    Semantic conventions for LLM traces
+  </Card>
+  <Card title="OpenTelemetry Docs" icon="book" href="https://opentelemetry.io/docs/">
+    Official OpenTelemetry documentation
+  </Card>
+  <Card title="Manual Instrumentation Guide" icon="code" href="https://arize.com/docs/phoenix/tracing/how-to-tracing/setup-tracing/instrument">
+    Detailed instrumentation guide
+  </Card>
+  <Card title="Phoenix OTEL Package" icon="python" href="https://arize-phoenix.readthedocs.io/projects/otel/en/latest/">
+    Python package documentation
+  </Card>
+</CardGroup>

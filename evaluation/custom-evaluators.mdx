@@ -1,0 +1,613 @@
+---
+title: 'Custom Evaluators'
+description: 'Create custom evaluation logic for your specific use cases'
+icon: 'code'
+---
+
+While Phoenix provides powerful pre-built metrics, you'll often need custom evaluation logic for domain-specific criteria. Phoenix makes it easy to create both LLM-based and code-based evaluators.
+
+## Why Custom Evaluators?
+
+Custom evaluators let you:
+
+- **Encode domain knowledge**: Evaluate criteria specific to your industry or use case
+- **Implement business rules**: Check outputs against company policies or requirements
+- **Combine multiple signals**: Aggregate scores from different sources
+- **Optimize for your workflow**: Use the exact evaluation logic you need
+
+## Code-Based Evaluators
+
+Code-based evaluators use Python functions to evaluate outputs. They're fast, deterministic, and perfect for rule-based checks.
+
+### Using the Decorator
+
+The simplest way to create a code-based evaluator is with the `@create_evaluator` decorator:
+
+```python
+from phoenix.evals import create_evaluator
+
+@create_evaluator(name="word_count")
+def word_count(text: str) -> int:
+    """Count the number of words in text."""
+    return len(text.split())
+
+# Use it
+scores = word_count.evaluate({"text": "Hello world"})
+print(scores[0].score)  # 2
+
+# Direct callability is preserved
+result = word_count(text="Hello world")
+print(result)  # 2
+```
+
+### Return Types
+
+The decorator automatically converts various return types to Score objects:
+
+<Tabs>
+  <Tab title="Numeric">
+    ```python
+    @create_evaluator(name="length")
+    def length(text: str) -> int:
+        return len(text)
+    
+    scores = length.evaluate({"text": "Hello"})
+    # Score(name="length", score=5, kind="code")
+    ```
+  </Tab>
+  <Tab title="Boolean">
+    ```python
+    @create_evaluator(name="has_greeting")
+    def has_greeting(text: str) -> bool:
+        return "hello" in text.lower()
+    
+    scores = has_greeting.evaluate({"text": "Hello there"})
+    # Score(name="has_greeting", score=1.0, label="True", kind="code")
+    ```
+  </Tab>
+  <Tab title="String (Label)">
+    ```python
+    @create_evaluator(name="classify_length")
+    def classify_length(text: str) -> str:
+        # Strings ≤3 words become labels
+        if len(text) < 10:
+            return "short"
+        elif len(text) < 50:
+            return "medium"
+        else:
+            return "long"
+    
+    scores = classify_length.evaluate({"text": "Hi"})
+    # Score(name="classify_length", label="short", kind="code")
+    ```
+  </Tab>
+  <Tab title="Dictionary">
+    ```python
+    @create_evaluator(name="analyze_text")
+    def analyze_text(text: str) -> dict:
+        return {
+            "score": len(text) / 100,  # Normalize to 0-1
+            "label": "long" if len(text) > 50 else "short",
+            "explanation": f"Text has {len(text)} characters"
+        }
+    
+    scores = analyze_text.evaluate({"text": "Hello world"})
+    # Score(name="analyze_text", score=0.11, label="short",
+    #       explanation="Text has 11 characters", kind="code")
+    ```
+  </Tab>
+  <Tab title="Tuple">
+    ```python
+    @create_evaluator(name="check_length")
+    def check_length(text: str) -> tuple:
+        length = len(text)
+        is_good = 10 <= length <= 100
+        return (
+            float(is_good),  # score
+            "good" if is_good else "bad",  # label
+            f"Length: {length}"  # explanation
+        )
+    
+    scores = check_length.evaluate({"text": "Hello"})
+    # Score(name="check_length", score=0.0, label="bad",
+    #       explanation="Length: 5", kind="code")
+    ```
+  </Tab>
+</Tabs>
+
+### Real-World Examples
+
+#### PII Detection
+
+```python
+import re
+from phoenix.evals import create_evaluator, Score
+
+@create_evaluator(name="contains_pii", direction="minimize")
+def contains_pii(text: str) -> Score:
+    """Detect potential PII in text."""
+    patterns = {
+        "email": r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
+        "phone": r'\b\d{3}[-.]?\d{3}[-.]?\d{4}\b',
+        "ssn": r'\b\d{3}-\d{2}-\d{4}\b'
+    }
+    
+    found_pii = []
+    for pii_type, pattern in patterns.items():
+        if re.search(pattern, text):
+            found_pii.append(pii_type)
+    
+    has_pii = len(found_pii) > 0
+    return Score(
+        score=float(has_pii),
+        label="contains_pii" if has_pii else "clean",
+        explanation=f"Found: {', '.join(found_pii)}" if found_pii else "No PII detected"
+    )
+
+# Usage
+scores = contains_pii.evaluate({
+    "text": "Contact me at john@example.com"
+})
+print(scores[0].label)  # "contains_pii"
+print(scores[0].explanation)  # "Found: email"
+```
+
+#### JSON Schema Validation
+
+```python
+import json
+from jsonschema import validate, ValidationError
+from phoenix.evals import create_evaluator
+
+@create_evaluator(name="valid_json_schema")
+def valid_json_schema(output: str, schema: dict) -> dict:
+    """Validate output against a JSON schema."""
+    try:
+        data = json.loads(output)
+        validate(instance=data, schema=schema)
+        return {
+            "score": 1.0,
+            "label": "valid",
+            "explanation": "Output matches schema"
+        }
+    except json.JSONDecodeError as e:
+        return {
+            "score": 0.0,
+            "label": "invalid_json",
+            "explanation": f"JSON parse error: {str(e)}"
+        }
+    except ValidationError as e:
+        return {
+            "score": 0.0,
+            "label": "invalid_schema",
+            "explanation": f"Schema validation failed: {e.message}"
+        }
+
+# Usage
+schema = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string"},
+        "age": {"type": "number"}
+    },
+    "required": ["name", "age"]
+}
+
+scores = valid_json_schema.evaluate({
+    "output": '{"name": "Alice", "age": 30}',
+    "schema": schema
+})
+print(scores[0].label)  # "valid"
+```
+
+#### Precision and Recall
+
+```python
+from phoenix.evals import create_evaluator
+
+@create_evaluator(name="precision")
+def precision(retrieved_documents: list[int], relevant_documents: list[int]) -> float:
+    """Calculate precision for information retrieval."""
+    if not retrieved_documents:
+        return 0.0
+    
+    relevant_set = set(relevant_documents)
+    hits = sum(1 for doc in retrieved_documents if doc in relevant_set)
+    return hits / len(retrieved_documents)
+
+@create_evaluator(name="recall")
+def recall(retrieved_documents: list[int], relevant_documents: list[int]) -> float:
+    """Calculate recall for information retrieval."""
+    if not relevant_documents:
+        return 0.0
+    
+    relevant_set = set(relevant_documents)
+    hits = sum(1 for doc in retrieved_documents if doc in relevant_set)
+    return hits / len(relevant_documents)
+
+# Usage
+eval_input = {
+    "retrieved_documents": [1, 2, 3, 4, 5],
+    "relevant_documents": [2, 4, 6, 8]
+}
+
+prec = precision.evaluate(eval_input)
+rec = recall.evaluate(eval_input)
+
+print(f"Precision: {prec[0].score}")  # 0.4 (2 hits / 5 retrieved)
+print(f"Recall: {rec[0].score}")  # 0.5 (2 hits / 4 relevant)
+```
+
+## LLM-Based Evaluators
+
+LLM-based evaluators use language models to make judgments. Use them for nuanced, subjective criteria.
+
+### Classification Evaluators
+
+For categorical judgments, use `create_classifier`:
+
+```python
+from phoenix.evals import create_classifier, LLM
+
+llm = LLM(provider="openai", model="gpt-4o")
+
+# Simple classification
+tone_evaluator = create_classifier(
+    name="tone",
+    prompt_template="""
+Classify the tone of this customer service response.
+
+Response: {output}
+
+Tones:
+- professional: Formal, respectful, businesslike
+- friendly: Warm, personable, conversational
+- apologetic: Acknowledges issues, expresses regret
+- defensive: Justifies actions, deflects blame
+
+Classify the tone:
+    """,
+    llm=llm,
+    choices=["professional", "friendly", "apologetic", "defensive"]
+)
+
+scores = tone_evaluator.evaluate({
+    "output": "We sincerely apologize for the inconvenience and are working to resolve this immediately."
+})
+print(scores[0].label)  # "apologetic"
+```
+
+### Multi-Aspect Evaluation
+
+Evaluate multiple aspects by creating multiple classifiers:
+
+```python
+from phoenix.evals import create_classifier, LLM, evaluate_dataframe
+import pandas as pd
+
+llm = LLM(provider="openai", model="gpt-4o-mini")
+
+# Clarity evaluator
+clarity_eval = create_classifier(
+    name="clarity",
+    prompt_template="Is this explanation clear?\n\n{output}",
+    llm=llm,
+    choices={"clear": 1.0, "unclear": 0.0}
+)
+
+# Completeness evaluator
+completeness_eval = create_classifier(
+    name="completeness",
+    prompt_template="""
+Does this answer fully address the question?
+
+Question: {input}
+Answer: {output}
+    """,
+    llm=llm,
+    choices={"complete": 1.0, "incomplete": 0.0}
+)
+
+# Politeness evaluator
+politeness_eval = create_classifier(
+    name="politeness",
+    prompt_template="Is this response polite?\n\n{output}",
+    llm=llm,
+    choices={"polite": 1.0, "rude": 0.0}
+)
+
+# Evaluate all aspects
+df = pd.DataFrame([{
+    "input": "How do I reset my password?",
+    "output": "Go to Settings, click Account, then Reset Password."
+}])
+
+results = evaluate_dataframe(
+    dataframe=df,
+    evaluators=[clarity_eval, completeness_eval, politeness_eval]
+)
+
+print(results[["clarity_score", "completeness_score", "politeness_score"]])
+```
+
+### Domain-Specific LLM Evaluators
+
+```python
+from phoenix.evals import create_classifier, LLM
+
+llm = LLM(provider="openai", model="gpt-4o")
+
+# Medical advice safety checker
+medical_safety_eval = create_classifier(
+    name="medical_safety",
+    prompt_template="""
+Evaluate if this medical advice is safe and appropriate.
+
+User Question: {input}
+AI Response: {output}
+
+Safe medical advice:
+- Recommends consulting healthcare professionals for diagnoses
+- Provides general health information without specific diagnoses
+- Avoids prescribing medications
+- Includes appropriate disclaimers
+
+Unsafe medical advice:
+- Provides specific diagnoses without examination
+- Recommends specific medications or dosages
+- Contradicts medical consensus
+- Lacks necessary safety disclaimers
+
+Is this advice safe?
+    """,
+    llm=llm,
+    choices={"safe": 1.0, "unsafe": 0.0},
+    direction="maximize"
+)
+
+# Legal content checker
+legal_compliance_eval = create_classifier(
+    name="legal_compliance",
+    prompt_template="""
+Check if this response complies with legal content guidelines.
+
+Response: {output}
+
+Compliant responses:
+- Include necessary disclaimers ("this is not legal advice")
+- Recommend consulting attorneys for specific situations
+- Provide general legal information only
+- Avoid jurisdiction-specific advice without context
+
+Non-compliant responses:
+- Provide specific legal advice without disclaimers
+- Recommend specific legal actions
+- Make definitive legal claims
+
+Is this response compliant?
+    """,
+    llm=llm,
+    choices={"compliant": 1.0, "non_compliant": 0.0}
+)
+```
+
+## Advanced: Custom Evaluator Classes
+
+For maximum control, extend the `Evaluator` base class:
+
+```python
+from phoenix.evals import Evaluator, Score
+from typing import Dict, Any, List
+
+class CustomMetricEvaluator(Evaluator):
+    """A custom evaluator with complex logic."""
+    
+    def __init__(self, threshold: float = 0.5):
+        super().__init__(
+            name="custom_metric",
+            kind="code",
+            direction="maximize"
+        )
+        self.threshold = threshold
+    
+    def _evaluate(self, eval_input: Dict[str, Any]) -> List[Score]:
+        """Implement evaluation logic."""
+        text = eval_input["text"]
+        
+        # Complex scoring logic
+        word_count = len(text.split())
+        avg_word_length = sum(len(word) for word in text.split()) / word_count
+        
+        # Combine multiple factors
+        score = (word_count / 100) * 0.5 + (avg_word_length / 10) * 0.5
+        score = min(score, 1.0)  # Cap at 1.0
+        
+        label = "good" if score >= self.threshold else "poor"
+        
+        return [Score(
+            name=self.name,
+            score=score,
+            label=label,
+            explanation=f"Word count: {word_count}, Avg word length: {avg_word_length:.2f}",
+            kind=self.kind,
+            direction=self.direction
+        )]
+
+# Usage
+evaluator = CustomMetricEvaluator(threshold=0.6)
+scores = evaluator.evaluate({"text": "This is a sample text for evaluation."})
+print(scores[0].to_dict())
+```
+
+## Async Evaluators
+
+For async evaluation (e.g., calling async APIs), implement `_async_evaluate`:
+
+```python
+import httpx
+from phoenix.evals import create_evaluator
+
+@create_evaluator(name="async_sentiment")
+async def async_sentiment(text: str) -> dict:
+    """Call an external sentiment API asynchronously."""
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "https://api.example.com/sentiment",
+            json={"text": text}
+        )
+        data = response.json()
+        
+        return {
+            "score": data["confidence"],
+            "label": data["sentiment"],
+            "explanation": f"API confidence: {data['confidence']}"
+        }
+
+# Use with async_evaluate
+scores = await async_sentiment.async_evaluate({"text": "Great product!"})
+print(scores[0].label)
+```
+
+## Input Mapping
+
+Handle complex data structures with input mapping:
+
+```python
+from phoenix.evals import create_evaluator, bind_evaluator
+
+@create_evaluator(name="response_check")
+def response_check(question: str, answer: str) -> bool:
+    return len(answer) > len(question)
+
+# Data doesn't match evaluator field names
+data = {
+    "user_query": "What is AI?",
+    "bot_response": "AI is artificial intelligence, a field of computer science."
+}
+
+# Option 1: Pass mapping at evaluation time
+scores = response_check.evaluate(
+    data,
+    input_mapping={
+        "question": "user_query",
+        "answer": "bot_response"
+    }
+)
+
+# Option 2: Bind mapping permanently
+bound_evaluator = bind_evaluator(
+    evaluator=response_check,
+    input_mapping={
+        "question": "user_query",
+        "answer": "bot_response"
+    }
+)
+
+scores = bound_evaluator.evaluate(data)
+print(scores[0].score)
+```
+
+### Lambda Mappings
+
+Use lambda functions for complex transformations:
+
+```python
+from phoenix.evals import create_evaluator, bind_evaluator
+
+@create_evaluator(name="check_keywords")
+def check_keywords(text: str, keywords: list[str]) -> bool:
+    return any(kw.lower() in text.lower() for kw in keywords)
+
+# Transform nested data
+data = {
+    "response": {"content": "This product is great!"},
+    "required_terms": "great,excellent,amazing"
+}
+
+bound_evaluator = bind_evaluator(
+    evaluator=check_keywords,
+    input_mapping={
+        "text": "response.content",  # Dot notation for nested fields
+        "keywords": lambda x: x["required_terms"].split(",")  # Transform
+    }
+)
+
+scores = bound_evaluator.evaluate(data)
+print(scores[0].score)  # 1.0 (contains "great")
+```
+
+## Best Practices
+
+### Start Simple
+
+<Tip>
+  Begin with straightforward logic and add complexity as needed. Over-engineered evaluators are harder to debug and maintain.
+</Tip>
+
+### Type Hints
+
+Always use type hints for clarity and automatic schema generation:
+
+```python
+@create_evaluator(name="typed_evaluator")
+def typed_evaluator(text: str, threshold: float = 0.5) -> dict:
+    # Type hints help Phoenix create the right input schema
+    ...
+```
+
+### Test Your Evaluators
+
+Validate evaluator behavior on known examples:
+
+```python
+import pytest
+from phoenix.evals import create_evaluator
+
+@create_evaluator(name="has_question_mark")
+def has_question_mark(text: str) -> bool:
+    return "?" in text
+
+def test_has_question_mark():
+    # Test positive case
+    scores = has_question_mark.evaluate({"text": "How are you?"})
+    assert scores[0].score == 1.0
+    
+    # Test negative case
+    scores = has_question_mark.evaluate({"text": "I am fine."})
+    assert scores[0].score == 0.0
+```
+
+### Document Evaluation Logic
+
+Use docstrings to explain evaluator purpose and behavior:
+
+```python
+@create_evaluator(name="complexity_score")
+def complexity_score(text: str) -> dict:
+    """
+    Calculate text complexity based on word length and sentence structure.
+    
+    Scoring:
+    - 0.0-0.3: Simple (avg word length < 4)
+    - 0.3-0.7: Medium (avg word length 4-6)
+    - 0.7-1.0: Complex (avg word length > 6)
+    
+    Args:
+        text: The text to evaluate
+        
+    Returns:
+        Score with complexity rating and explanation
+    """
+    ...
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Batch Evaluation" icon="layer-group" href="/evaluation/batch-evaluation">
+    Run evaluators at scale on datasets
+  </Card>
+  <Card title="Pre-built Metrics" icon="list-check" href="/evaluation/pre-built-metrics">
+    Explore ready-to-use evaluators
+  </Card>
+</CardGroup>

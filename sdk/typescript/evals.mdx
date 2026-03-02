@@ -1,0 +1,591 @@
+---
+title: TypeScript Evals Reference
+description: Complete reference for Phoenix evaluation framework in TypeScript/JavaScript
+---
+
+The `@arizeai/phoenix-evals` package provides a comprehensive framework for evaluating LLM outputs using LLM-based evaluators and custom functions.
+
+## Installation
+
+```bash
+npm install @arizeai/phoenix-evals
+```
+
+## Quick Start
+
+```typescript
+import { createHallucinationEvaluator } from '@arizeai/phoenix-evals';
+
+const evaluator = createHallucinationEvaluator({
+  model: 'gpt-4o'
+});
+
+const result = await evaluator({
+  output: 'The capital of France is Paris.',
+  context: 'France is a country in Europe with Paris as its capital.'
+});
+
+console.log(result);
+// {
+//   name: 'hallucination',
+//   score: 0.0,
+//   label: 'factual',
+//   explanation: 'The output is fully supported by the context.'
+// }
+```
+
+## Built-in Evaluators
+
+Phoenix provides ready-to-use evaluators for common LLM evaluation tasks.
+
+### Hallucination / Faithfulness
+
+Detects when the model generates information not supported by the context.
+
+```typescript
+import { createHallucinationEvaluator } from '@arizeai/phoenix-evals';
+
+const evaluator = createHallucinationEvaluator({
+  model: 'gpt-4o',
+  temperature: 0.0
+});
+
+const result = await evaluator({
+  output: 'Paris is the capital of France.',
+  context: 'France is a European country with Paris as its capital city.'
+});
+```
+
+**Alias:** `createFaithfulnessEvaluator()` (same functionality)
+
+**Required fields:**
+- `output`: The LLM's response
+- `context`: The context/documents provided to the LLM
+
+### Document Relevance
+
+Evaluates if retrieved documents are relevant to the query.
+
+```typescript
+import { createDocumentRelevanceEvaluator } from '@arizeai/phoenix-evals';
+
+const evaluator = createDocumentRelevanceEvaluator({
+  model: 'gpt-4o'
+});
+
+const result = await evaluator({
+  input: 'What is the capital of France?',
+  context: 'France is a European country. Paris is its capital.'
+});
+```
+
+**Required fields:**
+- `input`: The user's query
+- `context`: The retrieved document(s)
+
+### Correctness
+
+Compares the output against a reference answer.
+
+```typescript
+import { createCorrectnessEvaluator } from '@arizeai/phoenix-evals';
+
+const evaluator = createCorrectnessEvaluator({
+  model: 'gpt-4o'
+});
+
+const result = await evaluator({
+  output: 'Paris',
+  expected: 'Paris',
+  input: 'What is the capital of France?'
+});
+```
+
+**Required fields:**
+- `output`: The LLM's response
+- `expected`: The reference/correct answer
+- `input`: The original query (optional but recommended)
+
+### Conciseness
+
+Evaluates if the response is appropriately concise.
+
+```typescript
+import { createConcisenessEvaluator } from '@arizeai/phoenix-evals';
+
+const evaluator = createConcisenessEvaluator({
+  model: 'gpt-4o'
+});
+
+const result = await evaluator({
+  input: 'What is 2+2?',
+  output: '2+2 equals 4.'
+});
+```
+
+**Required fields:**
+- `input`: The user's query
+- `output`: The LLM's response
+
+### Refusal
+
+Detects when the model inappropriately refuses to answer.
+
+```typescript
+import { createRefusalEvaluator } from '@arizeai/phoenix-evals';
+
+const evaluator = createRefusalEvaluator({
+  model: 'gpt-4o'
+});
+
+const result = await evaluator({
+  input: 'What is the weather?',
+  output: 'I cannot provide weather information.'
+});
+```
+
+**Required fields:**
+- `input`: The user's query
+- `output`: The LLM's response
+
+### Tool Calling Evaluators
+
+Evaluate tool/function calling behavior:
+
+```typescript
+import {
+  createToolSelectionEvaluator,
+  createToolInvocationEvaluator,
+  createToolResponseHandlingEvaluator
+} from '@arizeai/phoenix-evals';
+
+// Check if the right tool was selected
+const toolSelection = createToolSelectionEvaluator({
+  model: 'gpt-4o'
+});
+
+const result1 = await toolSelection({
+  input: 'Get the weather in Paris',
+  output: 'Called get_weather(location="Paris")',
+  tools: ['get_weather', 'get_time', 'search_web']
+});
+
+// Check if tool was invoked correctly
+const toolInvocation = createToolInvocationEvaluator({
+  model: 'gpt-4o'
+});
+
+const result2 = await toolInvocation({
+  input: 'Get weather for Paris',
+  output: 'get_weather(location="Paris", units="celsius")'
+});
+
+// Check if tool response was handled properly
+const toolResponseHandling = createToolResponseHandlingEvaluator({
+  model: 'gpt-4o'
+});
+
+const result3 = await toolResponseHandling({
+  input: 'What\'s the weather?',
+  toolResponse: '{"temp": 20, "condition": "sunny"}',
+  output: 'It is sunny and 20°C.'
+});
+```
+
+## Custom Evaluators
+
+### Classification Evaluator
+
+Create a custom binary or multi-class classifier:
+
+```typescript
+import { createClassificationEvaluator } from '@arizeai/phoenix-evals';
+
+const evaluator = createClassificationEvaluator({
+  name: 'politeness',
+  model: 'gpt-4o',
+  template: `
+Given the following query and response, classify if the response is polite.
+
+Query: {input}
+Response: {output}
+
+Is the response polite? Answer YES or NO.
+  `,
+  rails: ['YES', 'NO']
+});
+
+const result = await evaluator({
+  input: 'Can you help me?',
+  output: 'Of course! I\'d be happy to help.'
+});
+```
+
+### Function-Based Evaluator
+
+Create an evaluator from a custom function:
+
+```typescript
+import { createEvaluator } from '@arizeai/phoenix-evals';
+
+const lengthEvaluator = createEvaluator({
+  name: 'response-length',
+  evaluateFn: ({ output }: { output: string }) => {
+    const length = output.length;
+    return {
+      name: 'response-length',
+      score: length < 100 ? 1.0 : 0.5,
+      label: length < 100 ? 'concise' : 'verbose',
+      metadata: { length }
+    };
+  }
+});
+
+const result = await lengthEvaluator({
+  output: 'Short response.'
+});
+```
+
+### LLM-Based Custom Evaluator
+
+```typescript
+import { LLMEvaluator } from '@arizeai/phoenix-evals';
+import OpenAI from 'openai';
+
+class CreativityEvaluator extends LLMEvaluator {
+  async evaluate({ input, output }: { input: string; output: string }) {
+    const openai = new OpenAI();
+    
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        {
+          role: 'user',
+          content: `Rate the creativity of this response on a scale of 1-10.\n\nQuery: ${input}\nResponse: ${output}\n\nProvide only the number.`
+        }
+      ],
+      temperature: 0.0
+    });
+    
+    const rating = parseInt(response.choices[0].message.content || '5');
+    
+    return {
+      name: 'creativity',
+      score: rating / 10,
+      label: rating >= 7 ? 'creative' : 'conventional',
+      metadata: { rating }
+    };
+  }
+}
+
+const evaluator = new CreativityEvaluator({ name: 'creativity' });
+const result = await evaluator.evaluate({
+  input: 'Write a story',
+  output: 'Once upon a time...'
+});
+```
+
+## Evaluation Result
+
+All evaluators return a result object:
+
+```typescript
+interface EvaluationResult {
+  name: string;           // Evaluator name
+  score: number;          // Numeric score (0-1)
+  label: string;          // Categorical label
+  explanation?: string;   // Optional explanation
+  metadata?: Record<string, any>; // Additional data
+}
+```
+
+Example:
+```typescript
+{
+  name: 'hallucination',
+  score: 0.0,
+  label: 'factual',
+  explanation: 'The output is fully supported by the context.',
+  metadata: {
+    model: 'gpt-4o',
+    confidence: 0.98
+  }
+}
+```
+
+## Batch Evaluation
+
+Evaluate multiple examples in parallel:
+
+```typescript
+import { createHallucinationEvaluator } from '@arizeai/phoenix-evals';
+
+const evaluator = createHallucinationEvaluator({
+  model: 'gpt-4o'
+});
+
+const examples = [
+  {
+    output: 'Paris is the capital.',
+    context: 'France has Paris as capital.'
+  },
+  {
+    output: 'London is the capital.',
+    context: 'UK has London as capital.'
+  }
+];
+
+const results = await Promise.all(
+  examples.map(ex => evaluator(ex))
+);
+
+console.log(results);
+```
+
+## Model Configuration
+
+Phoenix evals support multiple LLM providers:
+
+### OpenAI
+
+```typescript
+import { createHallucinationEvaluator } from '@arizeai/phoenix-evals';
+
+const evaluator = createHallucinationEvaluator({
+  model: 'gpt-4o',
+  temperature: 0.0,
+  apiKey: 'your-api-key' // Or set OPENAI_API_KEY env var
+});
+```
+
+### Anthropic
+
+```typescript
+const evaluator = createHallucinationEvaluator({
+  model: 'claude-3-5-sonnet-20241022',
+  temperature: 0.0,
+  apiKey: 'your-api-key' // Or set ANTHROPIC_API_KEY env var
+});
+```
+
+### Google (Gemini)
+
+```typescript
+const evaluator = createHallucinationEvaluator({
+  model: 'gemini-1.5-pro',
+  apiKey: 'your-api-key' // Or set GOOGLE_API_KEY env var
+});
+```
+
+### Azure OpenAI
+
+```typescript
+process.env.AZURE_OPENAI_API_KEY = 'your-key';
+process.env.AZURE_OPENAI_ENDPOINT = 'https://your-resource.openai.azure.com';
+process.env.AZURE_OPENAI_API_VERSION = '2024-02-01';
+
+const evaluator = createHallucinationEvaluator({
+  model: 'azure/gpt-4o'
+});
+```
+
+## Template System
+
+Customize evaluation prompts using templates:
+
+```typescript
+import { createClassificationEvaluator, applyTemplate } from '@arizeai/phoenix-evals';
+
+// Define a custom template
+const template = `
+You are an expert at evaluating responses.
+
+Task: {task}
+Response: {output}
+Reference: {expected}
+
+Evaluate if the response correctly completes the task.
+Answer CORRECT or INCORRECT.
+`;
+
+const evaluator = createClassificationEvaluator({
+  name: 'task-completion',
+  model: 'gpt-4o',
+  template,
+  rails: ['CORRECT', 'INCORRECT']
+});
+```
+
+### Template Variables
+
+Extract variables from a template:
+
+```typescript
+import { getTemplateVariables } from '@arizeai/phoenix-evals';
+
+const template = 'Evaluate {input} against {output}';
+const variables = getTemplateVariables(template);
+// Returns: ['input', 'output']
+```
+
+## Binding Evaluators
+
+Create an evaluator with pre-filled inputs:
+
+```typescript
+import { createHallucinationEvaluator, bindEvaluator } from '@arizeai/phoenix-evals';
+
+const baseEvaluator = createHallucinationEvaluator({
+  model: 'gpt-4o'
+});
+
+// Bind a fixed context
+const boundEvaluator = bindEvaluator(baseEvaluator, {
+  context: 'This is the fixed context for all evaluations.'
+});
+
+// Now only need to provide output
+const result = await boundEvaluator({
+  output: 'The response based on context.'
+});
+```
+
+## Helper Functions
+
+### toEvaluationResult()
+
+Convert custom data to standard evaluation result:
+
+```typescript
+import { toEvaluationResult } from '@arizeai/phoenix-evals';
+
+const customResult = {
+  evaluatorName: 'my-eval',
+  value: 0.85,
+  category: 'good'
+};
+
+const standardResult = toEvaluationResult({
+  name: customResult.evaluatorName,
+  score: customResult.value,
+  label: customResult.category
+});
+```
+
+### asEvaluatorFn()
+
+Convert a function to an evaluator:
+
+```typescript
+import { asEvaluatorFn } from '@arizeai/phoenix-evals';
+
+const myFunction = async ({ input, output }: any) => {
+  return {
+    name: 'custom',
+    score: Math.random(),
+    label: 'random'
+  };
+};
+
+const evaluator = asEvaluatorFn(myFunction);
+```
+
+## Integration Examples
+
+### With Phoenix Client
+
+```typescript
+import { createClient } from '@arizeai/phoenix-client';
+import { createHallucinationEvaluator } from '@arizeai/phoenix-evals';
+
+const client = createClient();
+const evaluator = createHallucinationEvaluator({ model: 'gpt-4o' });
+
+// Get traces from Phoenix
+const tracesResponse = await client.GET('/v1/traces', {
+  params: {
+    query: { project_id: 'my-project', limit: 10 }
+  }
+});
+
+if (tracesResponse.data) {
+  for (const trace of tracesResponse.data.traces) {
+    for (const span of trace.spans || []) {
+      // Evaluate each span
+      const result = await evaluator({
+        output: span.attributes?.output,
+        context: span.attributes?.context
+      });
+      
+      // Upload result as annotation
+      await client.POST('/v1/spans/{spanId}/annotations', {
+        params: {
+          path: { spanId: span.id }
+        },
+        body: {
+          name: result.name,
+          score: result.score,
+          label: result.label,
+          explanation: result.explanation
+        }
+      });
+    }
+  }
+}
+```
+
+### With Vercel AI SDK
+
+```typescript
+import { openai } from '@ai-sdk/openai';
+import { generateText } from 'ai';
+import { createHallucinationEvaluator } from '@arizeai/phoenix-evals';
+
+const evaluator = createHallucinationEvaluator({ model: 'gpt-4o' });
+
+const context = 'Paris is the capital of France.';
+const { text } = await generateText({
+  model: openai('gpt-4'),
+  prompt: 'What is the capital of France?'
+});
+
+// Evaluate the response
+const result = await evaluator({
+  output: text,
+  context
+});
+
+console.log('Hallucination score:', result.score);
+```
+
+## TypeScript Types
+
+The package provides full TypeScript support:
+
+```typescript
+import type {
+  Evaluator,
+  EvaluationResult,
+  EvaluatorConfig,
+  ClassificationEvaluatorConfig
+} from '@arizeai/phoenix-evals';
+
+const config: ClassificationEvaluatorConfig = {
+  name: 'my-evaluator',
+  model: 'gpt-4o',
+  template: 'Evaluate {input}',
+  rails: ['GOOD', 'BAD']
+};
+
+const evaluator: Evaluator = createClassificationEvaluator(config);
+
+const result: EvaluationResult = await evaluator({
+  input: 'test'
+});
+```
+
+## See Also
+
+- [TypeScript Client Reference](/sdk/typescript/client) - Interact with Phoenix
+- [TypeScript OTEL Reference](/sdk/typescript/otel) - Set up tracing
+- [Evaluations Guide](/evaluation/overview) - Learn about evaluation concepts

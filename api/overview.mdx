@@ -1,0 +1,132 @@
+---
+title: API Overview
+description: REST API overview for Arize Phoenix
+---
+
+The Arize Phoenix REST API provides programmatic access to tracing, evaluation, and dataset management features. This API follows RESTful conventions and uses JSON for request and response bodies.
+
+## Base URL
+
+The default base URL for self-hosted Phoenix is:
+
+```
+http://localhost:6006
+```
+
+All API endpoints are versioned and prefixed with `/v1`:
+
+```
+http://localhost:6006/v1
+```
+
+## API Versioning
+
+The Phoenix API uses URL-based versioning. The current version is `v1`, which is included in all endpoint paths:
+
+- `/v1/traces`
+- `/v1/evaluations`
+- `/v1/datasets`
+
+Version 1 provides stable endpoints for core functionality including traces, evaluations, datasets, and annotations.
+
+## OpenAPI Specification
+
+Phoenix provides a complete OpenAPI 3.1.0 specification for the REST API. You can access the schema at:
+
+```
+http://localhost:6006/docs
+```
+
+The OpenAPI schema includes:
+
+- Complete endpoint documentation
+- Request and response schemas
+- Parameter descriptions
+- Authentication requirements
+- Example requests
+
+The raw OpenAPI JSON schema is available in the Phoenix repository at `schemas/openapi.json`.
+
+## Common Patterns
+
+### Pagination
+
+Many list endpoints support cursor-based pagination:
+
+```json
+{
+  "data": [...],
+  "next_cursor": "base64-encoded-cursor"
+}
+```
+
+Use the `cursor` query parameter to fetch the next page:
+
+```bash
+GET /v1/datasets?cursor=base64-encoded-cursor&limit=10
+```
+
+### Relay Global IDs
+
+Phoenix uses Relay-style Global IDs for resource identification. These are base64-encoded strings that include the type and internal ID:
+
+```
+RGF0YXNldDoxMjM=  # Base64("Dataset:123")
+```
+
+When working with resources, you can use either:
+- **Global ID**: The Relay-encoded ID (e.g., from API responses)
+- **Name or OpenTelemetry ID**: Human-readable identifiers (where supported)
+
+### Content Types
+
+The API supports multiple content types depending on the endpoint:
+
+- **application/json**: Standard JSON requests/responses
+- **application/x-protobuf**: Protocol Buffers for trace ingestion
+- **application/x-pandas-arrow**: PyArrow tables for evaluations
+- **text/csv**: CSV file uploads and downloads
+- **application/jsonl**: JSONL file uploads
+
+### Error Handling
+
+The API uses standard HTTP status codes:
+
+- **200 OK**: Successful request
+- **204 No Content**: Successful request with no response body
+- **400 Bad Request**: Invalid request format
+- **401 Unauthorized**: Missing or invalid authentication
+- **403 Forbidden**: Insufficient permissions
+- **404 Not Found**: Resource not found
+- **422 Unprocessable Entity**: Invalid request parameters
+- **429 Too Many Requests**: Rate limit exceeded
+- **503 Service Unavailable**: Server at capacity
+
+Error responses include descriptive messages:
+
+```json
+{
+  "detail": "Dataset with ID 'xyz' not found"
+}
+```
+
+## Rate Limiting
+
+Phoenix may reject requests when the server is at capacity (HTTP 503). The trace ingestion endpoint monitors queue capacity and returns 503 when the span queue is full.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/api/authentication">
+    Learn how to authenticate API requests
+  </Card>
+  <Card title="Traces API" icon="code-branch" href="/api/traces">
+    Send and manage trace data
+  </Card>
+  <Card title="Evaluations API" icon="check-circle" href="/api/evaluations">
+    Submit and retrieve evaluations
+  </Card>
+  <Card title="Datasets API" icon="database" href="/api/datasets">
+    Manage datasets for testing
+  </Card>
+</CardGroup>

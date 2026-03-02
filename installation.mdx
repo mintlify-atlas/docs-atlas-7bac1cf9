@@ -1,0 +1,357 @@
+---
+title: Installation
+description: Install Phoenix using pip, conda, Docker, or from source
+---
+
+Phoenix can be installed in multiple ways depending on your environment and preferences.
+
+## Python Package
+
+### Requirements
+
+Phoenix requires:
+- **Python**: 3.10, 3.11, 3.12, or 3.13
+- **Operating System**: Linux, macOS, or Windows
+
+### pip (Recommended)
+
+Install Phoenix using pip:
+
+<CodeGroup>
+```bash pip
+pip install arize-phoenix
+```
+
+```bash pip with extras
+# For PostgreSQL support
+pip install "arize-phoenix[pg]"
+
+# For AWS S3 support
+pip install "arize-phoenix[aws]"
+
+# For both
+pip install "arize-phoenix[pg,aws]"
+```
+</CodeGroup>
+
+The `arize-phoenix` package includes:
+- Phoenix server
+- Tracing capabilities
+- Evaluation tools
+- Client libraries for interacting with Phoenix
+
+<Note>
+  The full `arize-phoenix` package is recommended for most users. If you only need specific functionality (like just the client), see the [Lightweight Packages](#lightweight-packages) section below.
+</Note>
+
+### conda
+
+Install Phoenix using conda:
+
+```bash
+conda install -c conda-forge arize-phoenix
+```
+
+### uv
+
+If you're using [uv](https://github.com/astral-sh/uv) for faster Python package management:
+
+```bash
+uv pip install arize-phoenix
+```
+
+### Verify Installation
+
+Verify that Phoenix is installed correctly:
+
+```bash
+python -c "import phoenix; print(phoenix.__version__)"
+```
+
+You can also check the installed version:
+
+```bash
+phoenix --version
+```
+
+## Docker
+
+Phoenix provides official Docker images hosted on [Docker Hub](https://hub.docker.com/r/arizephoenix/phoenix).
+
+### Pull the Latest Image
+
+```bash
+docker pull arizephoenix/phoenix:latest
+```
+
+### Run Phoenix in Docker
+
+<CodeGroup>
+```bash Basic
+# Run in foreground
+docker run -p 6006:6006 -p 4317:4317 arizephoenix/phoenix
+
+# Run in background
+docker run -d --name phoenix -p 6006:6006 -p 4317:4317 arizephoenix/phoenix
+```
+
+```bash With persistent storage
+# Create a volume for data persistence
+docker volume create phoenix-data
+
+# Run with mounted volume
+docker run -d \
+  --name phoenix \
+  -p 6006:6006 \
+  -p 4317:4317 \
+  -v phoenix-data:/phoenix/.data \
+  arizephoenix/phoenix
+```
+
+```bash With PostgreSQL
+# Using environment variables to configure PostgreSQL
+docker run -d \
+  --name phoenix \
+  -p 6006:6006 \
+  -p 4317:4317 \
+  -e PHOENIX_SQL_DATABASE_URL=postgresql://user:password@host:5432/dbname \
+  arizephoenix/phoenix
+```
+</CodeGroup>
+
+**Exposed Ports:**
+- `6006`: Phoenix web UI and HTTP API
+- `4317`: gRPC endpoint for OpenTelemetry traces
+- `9090`: Prometheus metrics (optional)
+
+### Docker Compose
+
+For a complete setup with PostgreSQL, create a `docker-compose.yml`:
+
+```yaml docker-compose.yml
+services:
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    ports:
+      - "6006:6006"
+      - "4317:4317"
+    environment:
+      - PHOENIX_SQL_DATABASE_URL=postgresql://postgres:postgres@db:5432/postgres
+    depends_on:
+      - db
+      
+  db:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  postgres_data:
+```
+
+Run with:
+
+```bash
+docker compose up -d
+```
+
+Access Phoenix at [http://localhost:6006](http://localhost:6006).
+
+### Building from Source (Docker)
+
+To build the Docker image yourself:
+
+```bash
+git clone https://github.com/Arize-ai/phoenix.git
+cd phoenix
+docker build -t phoenix .
+```
+
+<Note>
+  For ARM64 architectures (like Apple Silicon or Raspberry Pi), the Dockerfile automatically detects and uses the appropriate base image.
+</Note>
+
+## Installing from Source
+
+For development or to get the latest unreleased features:
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/Arize-ai/phoenix.git
+    cd phoenix
+    ```
+  </Step>
+  
+  <Step title="Install uv (if not already installed)">
+    Phoenix uses [uv](https://github.com/astral-sh/uv) for dependency management:
+    
+    ```bash
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    ```
+  </Step>
+  
+  <Step title="Install dependencies and build">
+    ```bash
+    # Install in development mode
+    uv sync --all-extras
+    
+    # Activate the virtual environment
+    source .venv/bin/activate  # On Unix/macOS
+    # or
+    .venv\Scripts\activate  # On Windows
+    ```
+  </Step>
+  
+  <Step title="Run Phoenix">
+    ```bash
+    python -m phoenix.server.main serve
+    ```
+  </Step>
+</Steps>
+
+## Lightweight Packages
+
+If you have a deployed Phoenix instance and only need specific functionality, you can install lightweight sub-packages:
+
+### Python Sub-packages
+
+<CodeGroup>
+```bash phoenix-otel
+# Lightweight OpenTelemetry wrapper with Phoenix defaults
+pip install arize-phoenix-otel
+```
+
+```bash phoenix-client
+# Client for interacting with Phoenix server via REST API
+pip install arize-phoenix-client
+```
+
+```bash phoenix-evals
+# Evaluation tools for LLM applications
+pip install arize-phoenix-evals
+```
+</CodeGroup>
+
+### TypeScript/JavaScript Packages
+
+For Node.js applications:
+
+<CodeGroup>
+```bash phoenix-otel
+npm install @arizeai/phoenix-otel
+```
+
+```bash phoenix-client
+npm install @arizeai/phoenix-client
+```
+
+```bash phoenix-evals
+npm install @arizeai/phoenix-evals
+```
+</CodeGroup>
+
+See the [TypeScript documentation](https://arize-ai.github.io/phoenix/) for more details.
+
+## Environment Variables
+
+Phoenix can be configured using environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|----------|
+| `PHOENIX_PORT` | Port for the web server | `6006` |
+| `PHOENIX_HOST` | Host to bind to | `0.0.0.0` |
+| `PHOENIX_SQL_DATABASE_URL` | Database URL (supports SQLite and PostgreSQL) | SQLite in working directory |
+| `PHOENIX_WORKING_DIR` | Directory for storing data | Current directory |
+| `PHOENIX_TELEMETRY_ENABLED` | Enable/disable usage telemetry | `true` |
+
+<Note>
+  Phoenix uses SQLite by default for simplicity. For production deployments, we recommend using PostgreSQL. See the [Deployment](/deployment) guide for more information.
+</Note>
+
+## Upgrading Phoenix
+
+To upgrade to the latest version:
+
+<CodeGroup>
+```bash pip
+pip install --upgrade arize-phoenix
+```
+
+```bash conda
+conda update -c conda-forge arize-phoenix
+```
+
+```bash Docker
+docker pull arizephoenix/phoenix:latest
+```
+</CodeGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Import errors after installation">
+    If you encounter import errors, ensure you're using a compatible Python version:
+    
+    ```bash
+    python --version
+    ```
+    
+    Phoenix requires Python 3.10 or higher. If you're using an older version, upgrade Python or create a new virtual environment with a compatible version.
+  </Accordion>
+  
+  <Accordion title="Permission denied errors on Linux/macOS">
+    If you get permission errors during installation, try using a virtual environment:
+    
+    ```bash
+    python -m venv phoenix-env
+    source phoenix-env/bin/activate
+    pip install arize-phoenix
+    ```
+  </Accordion>
+  
+  <Accordion title="Docker container exits immediately">
+    Check the container logs:
+    
+    ```bash
+    docker logs phoenix
+    ```
+    
+    Common issues include port conflicts (something else using port 6006) or database connection problems.
+  </Accordion>
+  
+  <Accordion title="SQLite database locked errors">
+    This can happen if multiple Phoenix instances try to use the same SQLite database. Either:
+    - Use different working directories for each instance
+    - Switch to PostgreSQL for multi-instance deployments
+    - Ensure only one Phoenix instance is running at a time
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+Now that you have Phoenix installed:
+
+<CardGroup cols={2}>
+  <Card
+    title="Quickstart Guide"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Get Phoenix running and trace your first application.
+  </Card>
+  
+  <Card
+    title="Deployment Guide"
+    icon="server"
+    href="/deployment/docker"
+  >
+    Learn how to deploy Phoenix for production use.
+  </Card>
+</CardGroup>

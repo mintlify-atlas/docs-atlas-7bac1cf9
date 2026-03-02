@@ -1,0 +1,398 @@
+---
+title: Evaluation
+description: LLM-as-a-judge evaluation with pre-built metrics and custom evaluators for systematic quality assessment
+---
+
+Phoenix provides a comprehensive evaluation framework to assess LLM outputs using both code-based and LLM-based evaluators. Evaluations can run client-side during development or server-side on production traces.
+
+## What is LLM Evaluation?
+
+**LLM-as-a-judge** evaluation uses language models to assess the quality of LLM outputs based on specific criteria. This approach scales better than human evaluation while maintaining high correlation with human judgments.
+
+Phoenix evaluations produce structured results with three components:
+
+- **Score**: Numeric value (typically 0-1 or boolean) indicating quality
+- **Label**: Categorical classification (e.g., "relevant", "irrelevant")
+- **Explanation**: Chain-of-thought reasoning explaining the judgment
+
+## Pre-Built Evaluators
+
+Phoenix includes production-ready evaluators for common LLM evaluation tasks (from `src/phoenix/experiments/evaluators/`):
+
+### LLM Evaluators
+
+<Tabs>
+  <Tab title="Relevance">
+    Evaluates whether the output is relevant to the input question.
+    
+    ```python
+    from phoenix.experiments.evaluators import RelevanceEvaluator
+    from phoenix.evals import OpenAIModel
+    
+    evaluator = RelevanceEvaluator(
+        model=OpenAIModel(model="gpt-4"),
+        name="output_relevance"
+    )
+    
+    result = evaluator.evaluate(
+        input={"query": "What is Phoenix?"},
+        output="Phoenix is an LLM observability platform."
+    )
+    # Returns: EvaluationResult(score=1.0, label="relevant", explanation="...")
+    ```
+  </Tab>
+  
+  <Tab title="Helpfulness">
+    Assesses whether the response is helpful and actionable.
+    
+    ```python
+    from phoenix.experiments.evaluators import HelpfulnessEvaluator
+    
+    evaluator = HelpfulnessEvaluator(
+        model=OpenAIModel(model="gpt-4"),
+        name="helpfulness"
+    )
+    ```
+  </Tab>
+  
+  <Tab title="Coherence">
+    Checks if the output is logically consistent and well-structured.
+    
+    ```python
+    from phoenix.experiments.evaluators import CoherenceEvaluator
+    
+    evaluator = CoherenceEvaluator(
+        model=OpenAIModel(model="gpt-4"),
+        name="coherence"
+    )
+    ```
+  </Tab>
+  
+  <Tab title="Conciseness">
+    Evaluates whether the output is appropriately concise.
+    
+    ```python
+    from phoenix.experiments.evaluators import ConcisenessEvaluator
+    
+    evaluator = ConcisenessEvaluator(
+        model=OpenAIModel(model="gpt-4"),
+        name="conciseness"
+    )
+    ```
+  </Tab>
+</Tabs>
+
+### Code Evaluators
+
+Code-based evaluators provide deterministic validation without LLM calls:
+
+<Tabs>
+  <Tab title="Contains Keyword">
+    Check if output contains specific keywords.
+    
+    ```python
+    from phoenix.experiments.evaluators import ContainsKeyword
+    
+    evaluator = ContainsKeyword(
+        keyword="Phoenix",
+        name="mentions_phoenix"
+    )
+    
+    result = evaluator.evaluate(
+        output="Phoenix is great for observability"
+    )
+    # Returns: EvaluationResult(score=1.0, label="true")
+    ```
+  </Tab>
+  
+  <Tab title="Regex Match">
+    Validate output against a regular expression pattern.
+    
+    ```python
+    from phoenix.experiments.evaluators import MatchesRegex
+    
+    evaluator = MatchesRegex(
+        pattern=r"^\d{3}-\d{4}$",  # Phone number format
+        name="valid_phone_format"
+    )
+    ```
+  </Tab>
+  
+  <Tab title="JSON Parsable">
+    Verify that output is valid JSON.
+    
+    ```python
+    from phoenix.experiments.evaluators import JSONParsable
+    
+    evaluator = JSONParsable(name="valid_json")
+    
+    result = evaluator.evaluate(
+        output='{"status": "success"}'
+    )
+    ```
+  </Tab>
+  
+  <Tab title="Contains All Keywords">
+    Require multiple keywords to be present.
+    
+    ```python
+    from phoenix.experiments.evaluators import ContainsAllKeywords
+    
+    evaluator = ContainsAllKeywords(
+        keywords=["observability", "tracing", "evaluation"],
+        name="covers_key_topics"
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Custom Evaluators
+
+### Custom Criteria Evaluator
+
+Create evaluators for domain-specific criteria using `LLMCriteriaEvaluator` (from `src/phoenix/experiments/evaluators/llm_evaluators.py`):
+
+```python
+from phoenix.experiments.evaluators import LLMCriteriaEvaluator
+from phoenix.evals import OpenAIModel
+
+evaluator = LLMCriteriaEvaluator(
+    model=OpenAIModel(model="gpt-4"),
+    criteria="professionalism",
+    description="maintains a respectful tone and appropriate formality",
+    name="professional_tone"
+)
+
+result = evaluator.evaluate(
+    output="Thank you for your inquiry. I'd be happy to assist."
+)
+```
+
+### Custom Function Evaluator
+
+Wrap any Python function as an evaluator using `create_evaluator` (from `src/phoenix/experiments/evaluators/utils.py`):
+
+```python
+from phoenix.experiments.evaluators import create_evaluator
+
+@create_evaluator(name="word_count")
+def word_count_evaluator(output: str) -> float:
+    """Score based on word count (ideal: 50-100 words)"""
+    word_count = len(output.split())
+    if 50 <= word_count <= 100:
+        return 1.0
+    elif word_count < 50:
+        return word_count / 50
+    else:
+        return max(0, 1 - (word_count - 100) / 100)
+
+result = word_count_evaluator.evaluate(
+    output="This is a test response."
+)
+```
+
+### Async Evaluators
+
+Support for async evaluation functions:
+
+```python
+import asyncio
+from phoenix.experiments.evaluators import create_evaluator
+
+@create_evaluator(name="async_sentiment")
+async def sentiment_evaluator(output: str) -> dict:
+    # Simulate async API call
+    await asyncio.sleep(0.1)
+    return {
+        "score": 0.8,
+        "label": "positive",
+        "explanation": "Output has positive sentiment"
+    }
+
+# Async evaluation happens automatically
+result = await sentiment_evaluator.async_evaluate(
+    output="Great work!"
+)
+```
+
+## Evaluation Results
+
+Evaluators return `EvaluationResult` objects (from `src/phoenix/experiments/types.py`) with optional fields:
+
+```python
+from phoenix.experiments.types import EvaluationResult
+
+result = EvaluationResult(
+    score=0.95,  # Numeric score (optional)
+    label="excellent",  # Categorical label (optional)
+    explanation="The response is comprehensive and accurate",  # Reasoning (optional)
+    metadata={"model": "gpt-4", "temperature": 0.7}  # Additional data (optional)
+)
+```
+
+### Evaluation Output Formats
+
+Evaluators can return multiple formats that are automatically converted to `EvaluationResult`:
+
+```python
+# Boolean → score (0/1) + label ("true"/"false")
+return True
+
+# Float → score only
+return 0.85
+
+# String → label only
+return "relevant"
+
+# Tuple → (score, label, explanation)
+return (0.9, "high_quality", "Well-written and informative")
+
+# Dict → full EvaluationResult
+return {"score": 0.95, "label": "excellent", "explanation": "..."}
+```
+
+## Client-Side vs Server-Side Evaluation
+
+### Client-Side Evaluation
+
+Run evaluations during experiments or development:
+
+```python
+from phoenix.experiments import run_experiment
+from phoenix.experiments.evaluators import RelevanceEvaluator
+from phoenix.evals import OpenAIModel
+
+result = run_experiment(
+    dataset=my_dataset,
+    task=my_task,
+    evaluators=[
+        RelevanceEvaluator(model=OpenAIModel(model="gpt-4"))
+    ]
+)
+```
+
+Client-side evaluation runs in your Python process and stores results in Phoenix for analysis.
+
+### Server-Side Evaluation
+
+Evaluate production traces automatically using the Phoenix UI:
+
+<Steps>
+  <Step title="Navigate to project">
+    Open your project in the Phoenix UI.
+  </Step>
+  
+  <Step title="Configure evaluator">
+    Click "Add Evaluator" and select from pre-built evaluators or define custom criteria.
+  </Step>
+  
+  <Step title="Run evaluation">
+    Evaluations run server-side on selected spans and store results in the database.
+  </Step>
+</Steps>
+
+Server-side evaluations are ideal for:
+- Continuous monitoring of production traces
+- Batch evaluation of historical data
+- Team collaboration without sharing code
+
+## Evaluation on Spans vs Experiments
+
+### Span Evaluations
+
+Evaluate individual spans from traces using `SpanEvaluations` (from `src/phoenix/trace/span_evaluations.py`):
+
+```python
+from phoenix.trace import SpanEvaluations
+import pandas as pd
+
+evaluations = SpanEvaluations(
+    eval_name="hallucination",
+    dataframe=pd.DataFrame({
+        "span_id": ["span1", "span2", "span3"],
+        "score": [0.0, 0.0, 1.0],
+        "label": ["factual", "factual", "hallucination"],
+        "explanation": ["Grounded in context", "Accurate", "Unverified claim"]
+    })
+)
+
+# Attach to trace dataset
+trace_dataset.append_evaluations(evaluations)
+```
+
+### Experiment Evaluations
+
+Evaluate experiment runs systematically (see [Experiments](/features/experiments)):
+
+```python
+from phoenix.experiments import evaluate_experiment
+
+evaluated = evaluate_experiment(
+    experiment=my_experiment,
+    evaluators={
+        "relevance": RelevanceEvaluator(model=OpenAIModel()),
+        "coherence": CoherenceEvaluator(model=OpenAIModel())
+    }
+)
+```
+
+## Advanced Features
+
+### Rate Limiting
+
+Handle API rate limits gracefully:
+
+```python
+from openai import RateLimitError
+
+result = run_experiment(
+    dataset=dataset,
+    task=task,
+    evaluators=[evaluator],
+    rate_limit_errors=RateLimitError  # Auto-retry on rate limits
+)
+```
+
+### Concurrency Control
+
+Control parallel evaluation execution:
+
+```python
+result = evaluate_experiment(
+    experiment=experiment,
+    evaluators=evaluators,
+    concurrency=10  # Run 10 evaluations in parallel
+)
+```
+
+### Evaluation Datasets
+
+Save and load evaluation results:
+
+```python
+# Save evaluations
+eval_id = evaluations.save(directory="./evals")
+
+# Load evaluations
+loaded_evals = SpanEvaluations.load(
+    id=eval_id,
+    directory="./evals"
+)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Experiments" icon="flask" href="/features/experiments">
+    Run systematic experiments with evaluators
+  </Card>
+  <Card title="Datasets" icon="database" href="/features/datasets">
+    Create evaluation datasets from traces
+  </Card>
+  <Card title="Pre-Built Evals" icon="check-double" href="/api-reference/evaluators">
+    Complete reference for all evaluators
+  </Card>
+  <Card title="Custom Evaluators" icon="code" href="/development.mdx">
+    Build advanced custom evaluation logic
+  </Card>
+</CardGroup>

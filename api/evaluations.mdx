@@ -1,0 +1,347 @@
+---
+title: Evaluations API
+description: API endpoints for submitting and retrieving evaluations
+---
+
+The Evaluations API allows you to submit span, trace, and document evaluations to Phoenix and retrieve evaluation results for analysis.
+
+## Overview
+
+Evaluations (also called annotations) attach quality metrics to your traces. They can be:
+- **Trace evaluations**: Score entire traces
+- **Span evaluations**: Score individual spans
+- **Document evaluations**: Score retrieved documents in RAG applications
+
+Evaluations are stored with an `annotator_kind` of `"LLM"` to distinguish them from human annotations.
+
+## Endpoints
+
+### Add Evaluations
+
+```http
+POST /v1/evaluations
+```
+
+Add span, trace, or document evaluations to Phoenix.
+
+#### Headers
+
+<ParamField header="Content-Type" type="string" required>
+  - `application/x-protobuf`: Protocol Buffer format
+  - `application/x-pandas-arrow`: PyArrow table format (recommended)
+</ParamField>
+
+<ParamField header="Content-Encoding" type="string">
+  Optional compression: `gzip` (for protobuf only)
+</ParamField>
+
+#### Request Body
+
+The request body format depends on the Content-Type:
+
+<AccordionGroup>
+  <Accordion title="Protocol Buffer Format (application/x-protobuf)">
+    Binary Protocol Buffer containing an `Evaluation` message with:
+    
+    - `name` (string, required): Name of the evaluation
+    - Evaluation data in protobuf format
+    
+    <Note>
+    The evaluation name must not be blank or empty.
+    </Note>
+  </Accordion>
+  
+  <Accordion title="PyArrow Format (application/x-pandas-arrow)">
+    PyArrow IPC stream containing a table with one of these index structures:
+    
+    **For trace evaluations:**
+    - Index: `trace_id` or `context.trace_id`
+    - Columns: `score` (float), `label` (string), `explanation` (string)
+    
+    **For span evaluations:**
+    - Index: `span_id` or `context.span_id`
+    - Columns: `score` (float), `label` (string), `explanation` (string)
+    
+    **For document evaluations:**
+    - Multi-index: `[span_id, document_position]` or `[context.span_id, document_position]`
+    - Columns: `score` (float), `label` (string), `explanation` (string)
+  </Accordion>
+</AccordionGroup>
+
+#### Response
+
+Returns HTTP 204 (No Content) on success.
+
+#### Example
+
+<CodeGroup>
+```python Python (PyArrow)
+import pandas as pd
+import pyarrow as pa
+import requests
+
+# Create evaluation dataframe
+df = pd.DataFrame({
+    'score': [0.95, 0.87, 0.72],
+    'label': ['correct', 'correct', 'incorrect'],
+    'explanation': [
+        'Accurate response',
+        'Mostly accurate',
+        'Contains errors'
+    ]
+}, index=pd.Index(
+    ['trace-id-1', 'trace-id-2', 'trace-id-3'],
+    name='trace_id'
+))
+
+# Convert to PyArrow table
+table = pa.Table.from_pandas(df)
+
+# Serialize to bytes
+sink = pa.BufferOutputStream()
+writer = pa.ipc.new_stream(sink, table.schema)
+writer.write_table(table)
+writer.close()
+body = sink.getvalue().to_pybytes()
+
+# Send to Phoenix
+response = requests.post(
+    'http://localhost:6006/v1/evaluations',
+    data=body,
+    headers={
+        'Authorization': 'Bearer your-api-key',
+        'Content-Type': 'application/x-pandas-arrow'
+    }
+)
+
+print(response.status_code)  # 204
+```
+
+```python Python (Phoenix SDK)
+from phoenix.evals import llm_classify
+
+# Use Phoenix SDK for easy evaluation
+evaluations = llm_classify(
+    dataframe=df,
+    model="gpt-4",
+    template="Evaluate if the response is correct...",
+    rails=["correct", "incorrect"]
+)
+
+# Automatically sends to Phoenix
+```
+
+```python Python (Document Evaluations)
+import pandas as pd
+import pyarrow as pa
+import requests
+
+# Create document evaluation dataframe with multi-index
+df = pd.DataFrame({
+    'score': [0.9, 0.8, 0.95],
+    'label': ['relevant', 'relevant', 'highly_relevant']
+}, index=pd.MultiIndex.from_tuples(
+    [
+        ('span-id-1', 0),
+        ('span-id-1', 1),
+        ('span-id-2', 0)
+    ],
+    names=['span_id', 'document_position']
+))
+
+table = pa.Table.from_pandas(df)
+
+sink = pa.BufferOutputStream()
+writer = pa.ipc.new_stream(sink, table.schema)
+writer.write_table(table)
+writer.close()
+
+response = requests.post(
+    'http://localhost:6006/v1/evaluations',
+    data=sink.getvalue().to_pybytes(),
+    headers={
+        'Content-Type': 'application/x-pandas-arrow'
+    }
+)
+```
+</CodeGroup>
+
+---
+
+### Get Evaluations
+
+```http
+GET /v1/evaluations
+```
+
+Retrieve span, trace, or document evaluations from a project.
+
+#### Query Parameters
+
+<ParamField query="project_name" type="string">
+  Name of the project to get evaluations from. Defaults to `"default"` if omitted.
+</ParamField>
+
+#### Response
+
+Returns a streaming response of PyArrow tables in `application/x-pandas-arrow` format. Each table contains evaluations for a specific evaluation name, grouped by type (trace/span/document).
+
+<ResponseField name="Content-Type" type="string">
+  `application/x-pandas-arrow`
+</ResponseField>
+
+The response streams multiple PyArrow IPC tables, each representing evaluations for one evaluation name.
+
+#### Response Schema
+
+<ResponseField name="trace evaluations">
+  Tables with `trace_id` index containing:
+  - `name`: Evaluation name
+  - `score`: Numeric score
+  - `label`: Categorical label  
+  - `explanation`: Text explanation
+  - Additional annotation metadata
+</ResponseField>
+
+<ResponseField name="span evaluations">
+  Tables with `span_id` index containing the same fields as trace evaluations
+</ResponseField>
+
+<ResponseField name="document evaluations">
+  Tables with multi-index `[span_id, document_position]` containing the same fields
+</ResponseField>
+
+#### Example
+
+<CodeGroup>
+```python Python
+import requests
+import pyarrow as pa
+
+url = "http://localhost:6006/v1/evaluations"
+headers = {"Authorization": "Bearer your-api-key"}
+params = {"project_name": "my-project"}
+
+response = requests.get(url, headers=headers, params=params)
+
+if response.status_code == 200:
+    # Read streaming PyArrow tables
+    reader = pa.ipc.open_stream(response.content)
+    
+    for batch in reader:
+        df = batch.to_pandas()
+        print(df)
+else:
+    print(f"No evaluations found: {response.status_code}")
+```
+
+```bash cURL
+curl -X GET "http://localhost:6006/v1/evaluations?project_name=my-project" \
+  -H "Authorization: Bearer your-api-key" \
+  --output evaluations.arrow
+```
+</CodeGroup>
+
+---
+
+## Evaluation Data Formats
+
+### Trace Evaluations
+
+Evaluate entire conversation traces:
+
+```python
+import pandas as pd
+
+df = pd.DataFrame({
+    'score': [0.95],
+    'label': ['correct'],
+    'explanation': ['Response is accurate']
+}, index=pd.Index(['trace-id-abc'], name='trace_id'))
+```
+
+### Span Evaluations
+
+Evaluate individual LLM calls or operations:
+
+```python
+df = pd.DataFrame({
+    'score': [0.87],
+    'label': ['relevant']
+}, index=pd.Index(['span-id-123'], name='span_id'))
+```
+
+### Document Evaluations
+
+Evaluate retrieved documents in RAG:
+
+```python
+df = pd.DataFrame({
+    'score': [0.9, 0.8, 0.95]
+}, index=pd.MultiIndex.from_tuples(
+    [('span-id-1', 0), ('span-id-1', 1), ('span-id-1', 2)],
+    names=['span_id', 'document_position']
+))
+```
+
+## Error Handling
+
+<ResponseField name="404" type="error">
+  No evaluations found for the specified project
+</ResponseField>
+
+<ResponseField name="415" type="error">
+  Unsupported content type. Must be `application/x-protobuf` or `application/x-pandas-arrow`
+</ResponseField>
+
+<ResponseField name="422" type="error">
+  Invalid request body:
+  - Evaluation name is blank or empty
+  - Invalid PyArrow format
+  - Invalid data structure (wrong index columns)
+</ResponseField>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use PyArrow Format" icon="table">
+    PyArrow format is more efficient than protobuf for bulk evaluations
+  </Card>
+  <Card title="Include Explanations" icon="comment">
+    Add explanation text to help understand evaluation decisions
+  </Card>
+  <Card title="Consistent Naming" icon="tag">
+    Use consistent evaluation names across your project (e.g., "correctness", "relevance")
+  </Card>
+  <Card title="Batch Processing" icon="layer-group">
+    Send multiple evaluations in a single request for better performance
+  </Card>
+</CardGroup>
+
+## Using Phoenix SDK
+
+For easier evaluation workflows, use the Phoenix Evals library:
+
+```python
+from phoenix.evals import (
+    llm_classify,
+    run_relevance_eval,
+    OpenAIModel
+)
+
+# LLM-based classification
+results = llm_classify(
+    dataframe=df,
+    model=OpenAIModel(model="gpt-4"),
+    template="Is this response correct?",
+    rails=["correct", "incorrect"]
+)
+
+# RAG relevance evaluation  
+relevance_results = run_relevance_eval(
+    dataframe=df,
+    model=OpenAIModel(model="gpt-4")
+)
+```
+
+See the [Evaluation](/evaluation) documentation for complete SDK usage.

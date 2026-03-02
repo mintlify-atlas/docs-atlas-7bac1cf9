@@ -1,0 +1,193 @@
+---
+title: TypeScript SDK Overview
+description: Overview of the Phoenix TypeScript/JavaScript SDK packages
+---
+
+The Phoenix TypeScript SDK provides comprehensive tools for AI observability, tracing, and evaluation in TypeScript and JavaScript applications.
+
+## Packages
+
+The Phoenix TypeScript SDK consists of three main packages:
+
+### @arizeai/phoenix-client
+
+The core client library for interacting with Phoenix programmatically. Use this to:
+- Manage projects, datasets, and experiments
+- Query and annotate traces and spans
+- Create and version prompts
+- Run evaluations and experiments
+
+[Learn more about the Client →](/sdk/typescript/client)
+
+### @arizeai/phoenix-otel
+
+OpenTelemetry integration for automatic tracing of LLM applications. Use this to:
+- Enable OpenTelemetry-based instrumentation
+- Configure trace export to Phoenix
+- Set up batching and performance optimization
+- Register custom instrumentations
+
+[Learn more about OTEL →](/sdk/typescript/otel)
+
+### @arizeai/phoenix-evals
+
+Evaluation framework for assessing LLM outputs. Use this to:
+- Run LLM-based evaluations (hallucination, relevance, correctness, etc.)
+- Create custom evaluators
+- Integrate evaluations into your workflow
+- Use built-in evaluation templates
+
+[Learn more about Evals →](/sdk/typescript/evals)
+
+## Installation
+
+Install the packages you need using npm, yarn, or pnpm:
+
+<CodeGroup>
+```bash npm - Client
+npm install @arizeai/phoenix-client
+```
+
+```bash npm - OTEL
+npm install @arizeai/phoenix-otel
+```
+
+```bash npm - Evals
+npm install @arizeai/phoenix-evals
+```
+
+```bash npm - All Packages
+npm install @arizeai/phoenix-client @arizeai/phoenix-otel @arizeai/phoenix-evals
+```
+
+```bash yarn
+yarn add @arizeai/phoenix-client @arizeai/phoenix-otel @arizeai/phoenix-evals
+```
+
+```bash pnpm
+pnpm add @arizeai/phoenix-client @arizeai/phoenix-otel @arizeai/phoenix-evals
+```
+</CodeGroup>
+
+## Quick Start
+
+Here's how the packages work together:
+
+```typescript
+// 1. Set up tracing with OTEL
+import { register } from '@arizeai/phoenix-otel';
+
+const provider = register({
+  projectName: 'my-llm-app',
+  batch: true
+});
+
+// 2. Your LLM application runs and generates traces automatically
+import OpenAI from 'openai';
+
+const client = new OpenAI();
+const response = await client.chat.completions.create({
+  model: 'gpt-4',
+  messages: [{ role: 'user', content: 'Hello!' }]
+});
+
+// 3. Use the client to query traces
+import { createClient } from '@arizeai/phoenix-client';
+
+const phoenixClient = createClient();
+const projects = await phoenixClient.GET('/v1/projects');
+
+// 4. Run evaluations on your data
+import { createHallucinationEvaluator } from '@arizeai/phoenix-evals';
+
+const evaluator = createHallucinationEvaluator({
+  model: 'gpt-4o'
+});
+
+const result = await evaluator({
+  output: response.choices[0].message.content,
+  context: 'System context'
+});
+```
+
+## Common Workflows
+
+### Development Workflow
+
+1. **Instrument your app** with `register()` to capture traces
+2. **Run your application** and generate traces automatically
+3. **Review traces** in the Phoenix UI
+4. **Run evaluations** to assess quality
+5. **Iterate** on prompts and configuration
+
+### Production Workflow
+
+1. **Configure OTEL** with batching for performance
+2. **Set up continuous evaluation** using the evals package
+3. **Monitor metrics** via the Phoenix UI
+4. **Use the client** for programmatic access to data
+5. **Create datasets** from production traces for testing
+
+## Environment Variables
+
+Configure the SDK using environment variables:
+
+<ParamField path="PHOENIX_COLLECTOR_URL" type="string">
+  Phoenix server URL (default: `http://localhost:6006`)
+</ParamField>
+
+<ParamField path="PHOENIX_API_KEY" type="string">
+  API key for authentication with Phoenix Cloud
+</ParamField>
+
+<ParamField path="PHOENIX_BASE_URL" type="string">
+  Base URL for Phoenix API client (default: `http://localhost:6006`)
+</ParamField>
+
+## TypeScript Support
+
+All packages are written in TypeScript and provide full type definitions:
+
+```typescript
+import type { PhoenixClient } from '@arizeai/phoenix-client';
+import type { RegisterParams } from '@arizeai/phoenix-otel';
+import type { Evaluator } from '@arizeai/phoenix-evals';
+
+// Fully typed client
+const client = createClient();
+const response = await client.GET('/v1/projects');
+// ^? response is fully typed based on OpenAPI spec
+
+// Type-safe evaluator configuration
+const evaluator: Evaluator = createHallucinationEvaluator({
+  model: 'gpt-4o',
+  temperature: 0.0
+});
+```
+
+## Framework Compatibility
+
+The Phoenix TypeScript SDK works with:
+
+- Node.js (v18+)
+- Next.js
+- Express
+- Vercel AI SDK
+- LangChain.js
+- Any TypeScript/JavaScript environment
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="TypeScript Client" icon="terminal" href="/sdk/typescript/client">
+    Interact with Phoenix programmatically
+  </Card>
+  
+  <Card title="TypeScript OTEL" icon="radar" href="/sdk/typescript/otel">
+    Set up OpenTelemetry tracing
+  </Card>
+  
+  <Card title="TypeScript Evals" icon="chart-line" href="/sdk/typescript/evals">
+    Evaluate LLM outputs
+  </Card>
+</CardGroup>

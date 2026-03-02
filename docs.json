@@ -1,122 +1,151 @@
 {
   "$schema": "https://mintlify.com/docs.json",
+  "name": "Phoenix",
   "theme": "mint",
-  "name": "Mint Starter Kit",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#0384C3",
+    "light": "#0384C3",
+    "dark": "#0384C3"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/Arize-ai/phoenix"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/Arize-ai/phoenix"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
+              "introduction",
               "quickstart",
-              "development"
+              "installation",
+              "deployment"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Features",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "features/tracing",
+              "features/evaluation",
+              "features/datasets",
+              "features/experiments",
+              "features/playground",
+              "features/prompt-management"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Tracing",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "tracing/overview",
+              "tracing/instrumentation",
+              "tracing/projects",
+              "tracing/sessions",
+              "tracing/annotations",
+              "tracing/cost-tracking"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Evaluation",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "evaluation/overview",
+              "evaluation/llm-as-judge",
+              "evaluation/pre-built-metrics",
+              "evaluation/custom-evaluators",
+              "evaluation/batch-evaluation"
+            ]
+          },
+          {
+            "group": "Datasets & Experiments",
+            "pages": [
+              "datasets/overview",
+              "datasets/creating-datasets",
+              "datasets/experiments",
+              "datasets/versioning"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "integrations/overview",
+              "integrations/openai",
+              "integrations/anthropic",
+              "integrations/langchain",
+              "integrations/llamaindex",
+              "integrations/opentelemetry"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "Deployment",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Self-Hosting",
             "pages": [
-              "api-reference/introduction"
+              "deployment/docker",
+              "deployment/kubernetes",
+              "deployment/configuration",
+              "deployment/security"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Cloud",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "deployment/phoenix-cloud",
+              "deployment/authentication",
+              "deployment/api-keys"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "SDK Reference",
+        "groups": [
+          {
+            "group": "Python SDK",
+            "pages": [
+              "sdk/python/overview",
+              "sdk/python/client",
+              "sdk/python/otel",
+              "sdk/python/evals"
+            ]
+          },
+          {
+            "group": "TypeScript SDK",
+            "pages": [
+              "sdk/typescript/overview",
+              "sdk/typescript/client",
+              "sdk/typescript/otel",
+              "sdk/typescript/evals"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "REST API",
+            "pages": [
+              "api/overview",
+              "api/authentication",
+              "api/traces",
+              "api/evaluations",
+              "api/datasets"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

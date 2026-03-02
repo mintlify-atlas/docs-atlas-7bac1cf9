@@ -1,0 +1,248 @@
+---
+title: Docker Deployment
+description: Deploy Phoenix using Docker and Docker Compose
+---
+
+Deploy Phoenix in a containerized environment using Docker or Docker Compose.
+
+## Quick Start with Docker
+
+Run Phoenix as a standalone container:
+
+```bash
+docker run -d \
+  --name phoenix \
+  -p 6006:6006 \
+  -p 4317:4317 \
+  arizephoenix/phoenix:latest
+```
+
+Access Phoenix at `http://localhost:6006`
+
+## Docker Compose Deployment
+
+For production deployments, use Docker Compose with PostgreSQL for persistence.
+
+### docker-compose.yml
+
+```yaml
+services:
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    depends_on:
+      - db
+    ports:
+      - 6006:6006    # Phoenix UI and API
+      - 4317:4317    # OpenTelemetry gRPC endpoint
+    environment:
+      - PHOENIX_SQL_DATABASE_URL=postgresql://postgres:postgres@db:5432/postgres
+      - PHOENIX_ENABLE_AUTH=true
+      - PHOENIX_SECRET=${PHOENIX_SECRET}
+    restart: unless-stopped
+
+  db:
+    image: postgres:16
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=postgres
+    ports:
+      - 5432
+    volumes:
+      - database_data:/var/lib/postgresql/data
+
+volumes:
+  database_data:
+    driver: local
+```
+
+### Start the Services
+
+<Steps>
+  <Step title="Set environment variables">
+    Create a `.env` file with your secrets:
+    
+    ```bash
+    PHOENIX_SECRET=$(openssl rand -base64 32)
+    ```
+  </Step>
+  
+  <Step title="Launch containers">
+    Start Phoenix and PostgreSQL:
+    
+    ```bash
+    docker-compose up -d
+    ```
+  </Step>
+  
+  <Step title="Verify deployment">
+    Check that containers are running:
+    
+    ```bash
+    docker-compose ps
+    docker-compose logs phoenix
+    ```
+  </Step>
+</Steps>
+
+## Building from Source
+
+Build the Phoenix image from the Dockerfile:
+
+```bash
+# Clone the repository
+git clone https://github.com/Arize-ai/phoenix.git
+cd phoenix
+
+# Build the image
+docker build -t phoenix .
+
+# Run the container
+docker run -d --name phoenix -p 6006:6006 -p 4317:4317 phoenix
+```
+
+### Multi-Stage Build
+
+The Dockerfile uses a multi-stage build process:
+
+1. **Frontend Builder**: Builds the React application using Node.js and pnpm
+2. **Backend Builder**: Packages the Python application with uv
+3. **Production Image**: Distroless Python image for minimal attack surface
+
+## Environment Variables
+
+Configure Phoenix using environment variables:
+
+<ParamField path="PHOENIX_SQL_DATABASE_URL" type="string" required>
+  Database connection URL. Use PostgreSQL for production:
+  ```
+  postgresql://user:password@host:5432/dbname
+  ```
+</ParamField>
+
+<ParamField path="PHOENIX_ENABLE_AUTH" type="boolean" default="false">
+  Enable authentication and authorization
+</ParamField>
+
+<ParamField path="PHOENIX_SECRET" type="string" required>
+  Secret key for JWT signing (min 32 characters, alphanumeric with digits)
+</ParamField>
+
+<ParamField path="PHOENIX_PORT" type="integer" default="6006">
+  Port for the Phoenix web UI and HTTP API
+</ParamField>
+
+<ParamField path="PHOENIX_GRPC_PORT" type="integer" default="4317">
+  Port for the OpenTelemetry gRPC collector
+</ParamField>
+
+See [Configuration Reference](/deployment/configuration) for all available options.
+
+## Persistence
+
+### PostgreSQL (Recommended)
+
+Use PostgreSQL with a named volume for production:
+
+```yaml
+volumes:
+  database_data:
+    driver: local
+```
+
+For cloud deployments, use managed PostgreSQL (RDS, Cloud SQL, Azure Database).
+
+### SQLite (Development Only)
+
+For development, mount a volume for SQLite:
+
+```yaml
+phoenix:
+  volumes:
+    - phoenix_data:/data
+  environment:
+    - PHOENIX_WORKING_DIR=/data
+
+volumes:
+  phoenix_data:
+```
+
+<Warning>
+  SQLite is not recommended for production. Use PostgreSQL for better performance and reliability.
+</Warning>
+
+## Exposed Ports
+
+The Phoenix container exposes three ports:
+
+- **6006**: Phoenix web UI and HTTP API
+- **4317**: OpenTelemetry gRPC endpoint for trace ingestion
+- **9090**: Prometheus metrics (when enabled)
+
+## Health Checks
+
+Phoenix provides health check endpoints:
+
+- `/healthz`: Liveness probe
+- `/readyz`: Readiness probe
+
+Add health checks to your docker-compose.yml:
+
+```yaml
+phoenix:
+  healthcheck:
+    test: ["CMD", "curl", "-f", "http://localhost:6006/healthz"]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+    start_period: 40s
+```
+
+## ARM64 Support
+
+For ARM64 platforms (Apple Silicon, Raspberry Pi), use the ARM64 base image:
+
+```dockerfile
+ARG BASE_IMAGE=gcr.io/distroless/python3-debian12:nonroot-arm64
+```
+
+## Troubleshooting
+
+### Container Fails to Start
+
+Check logs for errors:
+
+```bash
+docker logs phoenix
+```
+
+### Database Connection Issues
+
+Verify PostgreSQL is accessible:
+
+```bash
+docker exec -it phoenix-db-1 psql -U postgres -c "\l"
+```
+
+### Permission Issues
+
+The container runs as non-root user (UID 65532). Ensure volumes have correct permissions:
+
+```bash
+chown -R 65532:65532 /path/to/volume
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/deployment/configuration">
+    Configure environment variables and settings
+  </Card>
+  <Card title="Security" icon="shield" href="/deployment/security">
+    Set up authentication and encryption
+  </Card>
+  <Card title="Kubernetes" icon="dharmachakra" href="/deployment/kubernetes">
+    Deploy with Kubernetes and Helm
+  </Card>
+</CardGroup>

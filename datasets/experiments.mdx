@@ -1,0 +1,468 @@
+---
+title: Running Experiments
+description: Learn how to run experiments, track runs, compare results, and evaluate your AI applications
+---
+
+Experiments in Phoenix allow you to systematically evaluate your AI application's performance on a dataset. Each experiment runs your task function on every example, captures outputs and traces, and optionally evaluates results using metrics and quality checks.
+
+## Basic Experiment
+
+Here's a simple experiment that runs a task on a dataset:
+
+```python
+from phoenix.client import Client
+from phoenix.experiments import run_experiment
+
+client = Client()
+
+# Get your dataset
+dataset = client.datasets.get_dataset(dataset="qa-dataset")
+
+# Define your task
+def answer_question(input):
+    """Your AI application logic"""
+    question = input["question"]
+    # Call your model/LLM here
+    answer = generate_answer(question)
+    return {"answer": answer}
+
+# Run the experiment
+experiment = run_experiment(
+    dataset=dataset,
+    task=answer_question,
+    experiment_name="baseline-v1",
+    experiment_description="Initial baseline using GPT-4"
+)
+
+print(experiment)
+```
+
+This will:
+1. Execute `answer_question` on each example in the dataset
+2. Capture outputs and execution traces
+3. Store results in Phoenix
+4. Display a summary of the experiment
+
+## Task Functions
+
+Task functions can access different parts of the example:
+
+### Single Parameter (Input Only)
+
+```python
+def simple_task(input):
+    """Most common pattern - receives the input dict"""
+    question = input["question"]
+    return {"answer": generate_answer(question)}
+```
+
+### Multiple Parameters
+
+```python
+def task_with_reference(input, expected, metadata):
+    """
+    Access multiple fields:
+    - input: The input data
+    - expected/reference: The expected output (aliases)
+    - metadata: Example metadata
+    - example: The full Example object
+    """
+    question = input["question"]
+    difficulty = metadata.get("difficulty", "unknown")
+    
+    # Use difficulty to adjust generation
+    answer = generate_answer(question, difficulty=difficulty)
+    return {"answer": answer}
+```
+
+### Async Tasks
+
+```python
+import asyncio
+
+async def async_task(input):
+    """Async tasks enable concurrent execution"""
+    question = input["question"]
+    # Async LLM call
+    answer = await async_generate_answer(question)
+    return {"answer": answer}
+
+# Run with higher concurrency for async tasks
+experiment = run_experiment(
+    dataset=dataset,
+    task=async_task,
+    concurrency=10  # Run 10 examples concurrently
+)
+```
+
+## Task Output Format
+
+Tasks must return JSON-serializable data:
+
+```python
+# Valid return types
+return {"answer": "text response"}  # Dict
+return "simple string response"      # String
+return 42                             # Number
+return True                           # Boolean
+return ["item1", "item2"]            # List
+return None                           # None
+
+# Can also return nested structures
+return {
+    "answer": "The answer is 42",
+    "confidence": 0.95,
+    "sources": ["doc1", "doc2"],
+    "metadata": {
+        "model": "gpt-4",
+        "tokens": 150
+    }
+}
+```
+
+## Experiments with Evaluators
+
+Evaluate experiment outputs using built-in or custom evaluators:
+
+<Tabs>
+  <Tab title="Built-in Evaluators">
+    ```python
+    from phoenix.experiments import run_experiment
+    from phoenix.experiments.evaluators import create_evaluator
+    
+    # Run experiment with evaluation
+    experiment = run_experiment(
+        dataset=dataset,
+        task=answer_question,
+        evaluators=[
+            # Check if output exactly matches expected
+            create_evaluator("exact_match"),
+            # Measure semantic similarity
+            create_evaluator("semantic_similarity"),
+        ],
+        experiment_name="evaluated-v1"
+    )
+    
+    # Results include evaluation scores
+    print(experiment)
+    ```
+  </Tab>
+  
+  <Tab title="Custom Evaluators">
+    ```python
+    from phoenix.experiments import run_experiment
+    from phoenix.experiments.evaluators import create_evaluator
+    
+    # Define custom evaluator
+    def contains_keyword(output, metadata):
+        """Check if output contains required keywords"""
+        keywords = metadata.get("required_keywords", [])
+        answer = output.get("answer", "")
+        
+        found = sum(1 for kw in keywords if kw.lower() in answer.lower())
+        score = found / len(keywords) if keywords else 1.0
+        
+        return {
+            "score": score,
+            "label": "pass" if score >= 0.8 else "fail",
+            "explanation": f"Found {found}/{len(keywords)} keywords"
+        }
+    
+    # Use custom evaluator
+    experiment = run_experiment(
+        dataset=dataset,
+        task=answer_question,
+        evaluators=[contains_keyword],
+        experiment_name="keyword-check-v1"
+    )
+    ```
+  </Tab>
+  
+  <Tab title="LLM-as-Judge">
+    ```python
+    from phoenix.experiments import run_experiment
+    from phoenix.experiments.evaluators import create_evaluator
+    
+    # Use LLM to evaluate quality
+    def llm_judge_quality(output, expected):
+        """LLM evaluates answer quality"""
+        from openai import OpenAI
+        
+        client = OpenAI()
+        
+        prompt = f"""
+        Compare the generated answer to the expected answer.
+        Rate quality from 0.0 to 1.0.
+        
+        Expected: {expected['answer']}
+        Generated: {output['answer']}
+        
+        Respond with JSON: {{"score": float, "explanation": str}}
+        """
+        
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"}
+        )
+        
+        result = json.loads(response.choices[0].message.content)
+        return result
+    
+    experiment = run_experiment(
+        dataset=dataset,
+        task=answer_question,
+        evaluators=[llm_judge_quality],
+        experiment_name="llm-judge-v1"
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Evaluator Functions
+
+Evaluators receive the task output and example data:
+
+```python
+def my_evaluator(output, expected, input, metadata):
+    """
+    Parameters:
+    - output: The task's output
+    - expected/reference: Expected output from dataset (aliases)
+    - input: The input from the example
+    - metadata: Example metadata
+    
+    Return types:
+    - EvaluationResult object with score, label, explanation
+    - float (interpreted as score)
+    - bool (0 or 1 score, "True"/"False" label)
+    - str (interpreted as label)
+    - (score, explanation) tuple
+    """
+    
+    from phoenix.experiments.types import EvaluationResult
+    
+    # Your evaluation logic
+    is_correct = output["answer"] == expected["answer"]
+    
+    return EvaluationResult(
+        score=1.0 if is_correct else 0.0,
+        label="correct" if is_correct else "incorrect",
+        explanation=f"Answer matches: {is_correct}"
+    )
+```
+
+## Adding Evaluations to Existing Experiments
+
+You can add evaluations to experiments that have already run:
+
+```python
+from phoenix.experiments import evaluate_experiment
+
+# Run experiment without evaluation
+experiment = run_experiment(
+    dataset=dataset,
+    task=answer_question,
+    experiment_name="baseline-v1"
+)
+
+# Later, add evaluation
+evaluated = evaluate_experiment(
+    experiment=experiment,
+    evaluators=[
+        create_evaluator("exact_match"),
+        custom_quality_check
+    ]
+)
+
+print(evaluated)
+```
+
+## Experiment Configuration
+
+### Concurrency
+
+Control how many examples run in parallel:
+
+```python
+experiment = run_experiment(
+    dataset=dataset,
+    task=async_task,
+    concurrency=10,  # Run 10 examples at a time (async only)
+)
+```
+
+### Timeout
+
+Set a timeout for long-running tasks:
+
+```python
+experiment = run_experiment(
+    dataset=dataset,
+    task=slow_task,
+    timeout=300,  # 5 minutes per example
+)
+```
+
+### Rate Limiting
+
+Handle rate limits gracefully:
+
+```python
+from openai import RateLimitError
+
+experiment = run_experiment(
+    dataset=dataset,
+    task=openai_task,
+    rate_limit_errors=[RateLimitError],  # Automatically retry on rate limits
+)
+```
+
+### Dry Run
+
+Test your experiment on a subset without storing results:
+
+```python
+# Run on 5 random examples without storing
+experiment = run_experiment(
+    dataset=dataset,
+    task=answer_question,
+    dry_run=5,  # Test on 5 examples
+    print_summary=True
+)
+```
+
+## Experiment Metadata
+
+Add rich metadata to track experiment context:
+
+```python
+experiment = run_experiment(
+    dataset=dataset,
+    task=answer_question,
+    experiment_name="gpt4-turbo-v1",
+    experiment_description="Testing GPT-4 Turbo with new prompt template",
+    experiment_metadata={
+        "model": "gpt-4-turbo-preview",
+        "temperature": 0.7,
+        "prompt_version": "v2.1",
+        "git_commit": "abc123def",
+        "team": "ml-platform"
+    }
+)
+```
+
+## Accessing Results
+
+### Summary Statistics
+
+```python
+# Print experiment summary
+print(experiment)
+
+# Access task summary
+print(f"Total runs: {experiment.task_summary.stats['n_runs'].values[0]}")
+print(f"Errors: {experiment.task_summary.stats['n_errors'].values[0]}")
+
+# Access evaluation summaries
+for eval_summary in experiment.eval_summaries:
+    print(eval_summary)
+```
+
+### Individual Runs
+
+```python
+# Iterate over all runs
+for run in experiment:
+    print(f"Example: {run.dataset_example_id}")
+    print(f"Output: {run.output}")
+    print(f"Error: {run.error}")
+    print(f"Trace ID: {run.trace_id}")
+
+# Access specific run by index
+first_run = experiment[0]
+print(first_run.output)
+
+# Get run with example data
+print(first_run.input)       # Example input
+print(first_run.expected)    # Expected output
+print(first_run.metadata)    # Example metadata
+```
+
+### DataFrame Export
+
+```python
+# Export experiment runs to DataFrame
+runs_df = experiment.as_dataframe()
+print(runs_df.columns)
+# ['error', 'output', 'input', 'expected', 'metadata', 'example_id']
+
+# Export evaluations to DataFrame
+evals_df = experiment.get_evaluations()
+print(evals_df.columns)
+# ['name', 'error', 'score', 'label', 'explanation', 'error', 'output', 'input', 'expected', 'metadata', 'example_id']
+
+# Analyze results
+avg_score = evals_df['score'].mean()
+print(f"Average score: {avg_score:.2f}")
+```
+
+## Comparing Experiments
+
+Compare multiple experiments in the Phoenix UI:
+
+```python
+# Run baseline
+baseline = run_experiment(
+    dataset=dataset,
+    task=gpt35_task,
+    experiment_name="baseline-gpt35"
+)
+
+# Run improved version
+improved = run_experiment(
+    dataset=dataset,
+    task=gpt4_task,
+    experiment_name="improved-gpt4"
+)
+
+# View comparison in UI
+print(f"Compare at: {improved.url}")
+```
+
+The Phoenix UI provides:
+- Side-by-side output comparison
+- Evaluation score differences
+- Trace viewing for debugging
+- Statistical summaries
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Start Small" icon="seedling">
+    Test your task on a few examples with `dry_run` before running the full experiment.
+  </Card>
+  
+  <Card title="Use Async" icon="bolt">
+    Implement async tasks with appropriate concurrency for faster experiments.
+  </Card>
+  
+  <Card title="Handle Errors" icon="shield">
+    Implement error handling in your task to avoid stopping the entire experiment.
+  </Card>
+  
+  <Card title="Rich Metadata" icon="tag">
+    Add detailed metadata to experiments for better tracking and comparison.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Evaluators" icon="check-circle" href="/evaluation/custom-evaluators">
+    Learn about built-in and custom evaluators
+  </Card>
+  <Card title="Dataset Versioning" icon="code-branch" href="/datasets/versioning">
+    Manage dataset versions and exports
+  </Card>
+</CardGroup>

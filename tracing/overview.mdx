@@ -1,0 +1,206 @@
+---
+title: Tracing Overview
+description: Understand distributed tracing in Phoenix with OpenTelemetry and OpenInference
+---
+
+Phoenix provides comprehensive distributed tracing for LLM applications using OpenTelemetry and OpenInference standards. Tracing helps you understand the flow of execution, debug issues, and monitor performance across your AI applications.
+
+## What is Tracing?
+
+Tracing captures the execution path of your application by recording spans - individual units of work that represent operations like LLM calls, retrieval steps, or tool executions. These spans are organized into traces that show the complete request flow.
+
+## OpenTelemetry and OpenInference
+
+Phoenix builds on two key standards:
+
+- **OpenTelemetry**: Industry-standard observability framework for traces, metrics, and logs
+- **OpenInference**: Semantic conventions specifically designed for LLM applications, defining standard attributes for prompts, completions, embeddings, and retrieval
+
+## Trace Hierarchy
+
+Traces in Phoenix follow a hierarchical structure:
+
+```
+Trace (trace_id)
+├── Root Span (span_id)
+│   ├── Child Span 1
+│   │   └── Grandchild Span
+│   └── Child Span 2
+```
+
+Each trace has:
+- **Trace ID**: Unique identifier for the entire request
+- **Span ID**: Unique identifier for each operation
+- **Parent Span ID**: Links spans in a hierarchy
+- **Timestamps**: Start and end times for duration tracking
+
+## Span Structure
+
+Every span captures:
+
+<Steps>
+  <Step title="Basic Information">
+    - Name (e.g., "ChatCompletion", "Retrieval")
+    - Start and end timestamps
+    - Status (OK, ERROR, UNSET)
+  </Step>
+
+  <Step title="Span Attributes">
+    Structured metadata following OpenInference conventions:
+    
+    ```python
+    {
+      "llm.model_name": "gpt-4",
+      "llm.token_count.prompt": 150,
+      "llm.token_count.completion": 50,
+      "input.value": "What is the capital of France?",
+      "output.value": "The capital of France is Paris."
+    }
+    ```
+  </Step>
+
+  <Step title="Events and Exceptions">
+    Timestamped events that occur during span execution, including exceptions with stack traces.
+  </Step>
+</Steps>
+
+## Span Kinds
+
+OpenInference defines semantic span kinds for LLM operations:
+
+| Span Kind | Description | Example |
+|-----------|-------------|----------|
+| `CHAIN` | Orchestration logic | LangChain chains, agent workflows |
+| `LLM` | Language model calls | OpenAI, Anthropic completions |
+| `RETRIEVER` | Vector/document retrieval | Vector database queries |
+| `EMBEDDING` | Text embedding generation | Embedding API calls |
+| `RERANKER` | Document reranking | Cohere rerank |
+| `TOOL` | External tool execution | Function calls, API requests |
+| `AGENT` | Autonomous agent operations | ReAct, AutoGPT agents |
+
+## Key Span Attributes
+
+Common attributes captured in spans:
+
+<CodeGroup>
+```python Input/Output
+# Captured automatically by instrumentation
+attributes = {
+    "input.value": "user query",
+    "input.mime_type": "text/plain",
+    "output.value": "model response",
+    "output.mime_type": "text/plain"
+}
+```
+
+```python LLM Attributes
+attributes = {
+    "llm.model_name": "gpt-4",
+    "llm.invocation_parameters": '{"temperature": 0.7}',
+    "llm.token_count.prompt": 150,
+    "llm.token_count.completion": 50,
+    "llm.token_count.total": 200
+}
+```
+
+```python Retrieval Attributes
+attributes = {
+    "retrieval.documents.0.document.content": "doc content",
+    "retrieval.documents.0.document.score": 0.95,
+    "retrieval.documents.0.document.metadata": '{"source": "kb"}'
+}
+```
+</CodeGroup>
+
+## The Phoenix UI
+
+The Phoenix UI provides powerful trace visualization:
+
+### Trace Timeline
+
+View the complete execution timeline with:
+- Span hierarchy and nesting
+- Duration waterfall chart
+- Token usage per span
+- Error highlighting
+
+### Span Details
+
+Inspect individual spans:
+- Full input/output values
+- Model parameters and metadata
+- Token counts and costs
+- Exception stack traces
+
+### Trace Search and Filtering
+
+Find specific traces using:
+- Full-text search on inputs/outputs
+- Attribute-based filtering
+- Time range selection
+- Status code filtering (errors only)
+
+## OTLP Protocol
+
+Phoenix receives traces using the OTLP (OpenTelemetry Protocol) over HTTP or gRPC:
+
+<Tabs>
+  <Tab title="HTTP">
+    ```bash
+    # Default HTTP endpoint
+    http://localhost:6006/v1/traces
+    ```
+    
+    Recommended for most use cases. Lower overhead, simpler configuration.
+  </Tab>
+
+  <Tab title="gRPC">
+    ```bash
+    # Default gRPC endpoint
+    http://localhost:4317
+    ```
+    
+    Better for high-volume production environments with bidirectional streaming.
+  </Tab>
+</Tabs>
+
+## Trace Data Model
+
+Phoenix internally represents traces using the following structure:
+
+```python
+@dataclass
+class Span:
+    name: str
+    context: SpanContext  # trace_id, span_id
+    parent_id: Optional[str]
+    start_time: datetime
+    end_time: datetime
+    attributes: dict[str, Any]
+    span_kind: SpanKind
+    status_code: SpanStatusCode  # UNSET, OK, ERROR
+    status_message: str
+    events: list[SpanEvent]
+```
+
+Spans are decoded from OTLP protobuf format and stored with flattened attributes for efficient querying.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Instrumentation" icon="code" href="/tracing/instrumentation">
+    Learn how to instrument your LLM applications
+  </Card>
+  
+  <Card title="Projects" icon="folder" href="/tracing/projects">
+    Organize traces with projects
+  </Card>
+  
+  <Card title="Sessions" icon="users" href="/tracing/sessions">
+    Group related traces into sessions
+  </Card>
+  
+  <Card title="Annotations" icon="pen" href="/tracing/annotations">
+    Add feedback and evaluations to traces
+  </Card>
+</CardGroup>

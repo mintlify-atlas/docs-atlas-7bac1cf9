@@ -1,0 +1,616 @@
+---
+title: Python Evals Reference
+description: Complete reference for Phoenix evaluation framework
+---
+
+The `arize-phoenix-evals` package provides a comprehensive framework for evaluating LLM outputs using LLM-based evaluators, heuristics, and custom functions.
+
+## Installation
+
+```bash
+pip install arize-phoenix-evals
+```
+
+## Quick Start
+
+```python
+from phoenix.evals import evaluate_dataframe
+from phoenix.evals.metrics import hallucination, relevance
+import pandas as pd
+
+# Your data
+df = pd.DataFrame([
+    {
+        "input": "What is the capital of France?",
+        "output": "The capital of France is Paris.",
+        "context": "France is a country in Europe with Paris as its capital."
+    }
+])
+
+# Run evaluations
+results = evaluate_dataframe(
+    df,
+    evaluators=[hallucination(), relevance()]
+)
+
+print(results)
+```
+
+## Core Functions
+
+### evaluate_dataframe()
+
+Evaluate a pandas DataFrame with one or more evaluators.
+
+```python
+from phoenix.evals import evaluate_dataframe
+
+results = evaluate_dataframe(
+    dataframe: pd.DataFrame,
+    evaluators: List[Evaluator],
+    input_mapping: Optional[Dict[str, str]] = None,
+    concurrency: int = 4,
+    progress_bar: bool = True
+) -> pd.DataFrame
+```
+
+<ParamField path="dataframe" type="pd.DataFrame" required>
+  The input DataFrame containing examples to evaluate.
+</ParamField>
+
+<ParamField path="evaluators" type="List[Evaluator]" required>
+  List of evaluator instances to run on the data.
+</ParamField>
+
+<ParamField path="input_mapping" type="Dict[str, str]">
+  Mapping from evaluator input names to DataFrame column names. For example: `{"query": "input", "reference": "context"}`
+</ParamField>
+
+<ParamField path="concurrency" type="int">
+  Number of concurrent evaluations to run.
+  
+  **Default:** `4`
+</ParamField>
+
+<ParamField path="progress_bar" type="bool">
+  Whether to show a progress bar.
+  
+  **Default:** `True`
+</ParamField>
+
+### async_evaluate_dataframe()
+
+Async version of `evaluate_dataframe()`.
+
+```python
+from phoenix.evals import async_evaluate_dataframe
+import asyncio
+
+async def main():
+    results = await async_evaluate_dataframe(
+        df,
+        evaluators=[hallucination()]
+    )
+
+asyncio.run(main())
+```
+
+## Built-in Evaluators
+
+Phoenix provides ready-to-use evaluators for common LLM evaluation tasks.
+
+### Hallucination / Faithfulness
+
+Detects when the model generates information not supported by the context.
+
+```python
+from phoenix.evals.metrics import hallucination
+
+evaluator = hallucination(
+    model="gpt-4o",  # or "gpt-4", "claude-3-5-sonnet", etc.
+    temperature=0.0
+)
+
+results = evaluate_dataframe(
+    df,  # Must have 'output' and 'context' columns
+    evaluators=[evaluator]
+)
+```
+
+**Required columns:** `output`, `context` (or remap using `input_mapping`)
+
+### Relevance
+
+Evaluates if the response is relevant to the input query.
+
+```python
+from phoenix.evals.metrics import relevance
+
+evaluator = relevance(
+    model="gpt-4o",
+    temperature=0.0
+)
+
+results = evaluate_dataframe(
+    df,  # Must have 'input' and 'output' columns
+    evaluators=[evaluator]
+)
+```
+
+**Required columns:** `input`, `output`
+
+### Document Relevance
+
+Evaluates if retrieved documents are relevant to the query.
+
+```python
+from phoenix.evals.metrics import document_relevance
+
+evaluator = document_relevance(
+    model="gpt-4o"
+)
+
+results = evaluate_dataframe(
+    df,  # Must have 'input' and 'context' columns
+    evaluators=[evaluator]
+)
+```
+
+**Required columns:** `input`, `context`
+
+### Toxicity
+
+Detects toxic, harmful, or inappropriate content.
+
+```python
+from phoenix.evals.metrics import toxicity
+
+evaluator = toxicity(
+    model="gpt-4o"
+)
+
+results = evaluate_dataframe(
+    df,  # Must have 'output' column
+    evaluators=[evaluator]
+)
+```
+
+**Required columns:** `output`
+
+### Correctness
+
+Compares the output against a reference answer.
+
+```python
+from phoenix.evals.metrics import correctness
+
+evaluator = correctness(
+    model="gpt-4o"
+)
+
+results = evaluate_dataframe(
+    df,  # Must have 'output' and 'reference' columns
+    evaluators=[evaluator]
+)
+```
+
+**Required columns:** `output`, `reference`
+
+### Conciseness
+
+Evaluates if the response is appropriately concise.
+
+```python
+from phoenix.evals.metrics import conciseness
+
+evaluator = conciseness(
+    model="gpt-4o"
+)
+
+results = evaluate_dataframe(
+    df,  # Must have 'input' and 'output' columns
+    evaluators=[evaluator]
+)
+```
+
+**Required columns:** `input`, `output`
+
+### Refusal
+
+Detects when the model inappropriately refuses to answer.
+
+```python
+from phoenix.evals.metrics import refusal
+
+evaluator = refusal(
+    model="gpt-4o"
+)
+
+results = evaluate_dataframe(
+    df,  # Must have 'input' and 'output' columns
+    evaluators=[evaluator]
+)
+```
+
+**Required columns:** `input`, `output`
+
+### Tool Calling Evaluators
+
+Evaluate tool/function calling behavior:
+
+```python
+from phoenix.evals.metrics import (
+    tool_selection,
+    tool_invocation,
+    tool_response_handling
+)
+
+# Check if the right tool was selected
+tool_sel = tool_selection(model="gpt-4o")
+
+# Check if tool was invoked correctly
+tool_inv = tool_invocation(model="gpt-4o")
+
+# Check if tool response was handled properly
+tool_resp = tool_response_handling(model="gpt-4o")
+
+results = evaluate_dataframe(
+    df,
+    evaluators=[tool_sel, tool_inv, tool_resp]
+)
+```
+
+## Custom Evaluators
+
+### Creating a Classification Evaluator
+
+```python
+from phoenix.evals import create_evaluator, ClassificationEvaluator
+
+# Define your evaluation template
+template = """
+Given the following query and response, classify if the response is polite.
+
+Query: {input}
+Response: {output}
+
+Is the response polite?
+Answer YES or NO.
+"""
+
+evaluator = create_evaluator(
+    name="politeness",
+    template=template,
+    rails=["YES", "NO"],  # Valid classifications
+    model="gpt-4o"
+)
+
+results = evaluate_dataframe(df, evaluators=[evaluator])
+```
+
+### Creating a Function Evaluator
+
+```python
+from phoenix.evals import create_evaluator
+
+def custom_metric(input: str, output: str) -> float:
+    """Custom evaluation logic."""
+    # Your logic here
+    if len(output) < 10:
+        return 0.0
+    elif len(output) < 100:
+        return 0.5
+    else:
+        return 1.0
+
+evaluator = create_evaluator(
+    name="length_check",
+    evaluate_fn=custom_metric,
+    kind="code"  # Mark as code-based evaluator
+)
+
+results = evaluate_dataframe(df, evaluators=[evaluator])
+```
+
+### Advanced: LLM Evaluator Class
+
+```python
+from phoenix.evals import LLMEvaluator
+from phoenix.evals.llm import LLM
+
+class CustomEvaluator(LLMEvaluator):
+    def __init__(self, model: str = "gpt-4o"):
+        llm = LLM(model=model)
+        
+        template = """
+        Evaluate the response for creativity.
+        
+        Input: {input}
+        Output: {output}
+        
+        Rate creativity from 1-10.
+        """
+        
+        super().__init__(
+            name="creativity",
+            llm=llm,
+            template=template,
+            output_parser=lambda x: float(x) / 10.0
+        )
+
+evaluator = CustomEvaluator()
+results = evaluate_dataframe(df, evaluators=[evaluator])
+```
+
+## Score Object
+
+Evaluators return `Score` objects containing evaluation results:
+
+```python
+from phoenix.evals import Score
+
+score = Score(
+    name="hallucination",
+    score=0.95,
+    label="factual",
+    explanation="The response is fully supported by the context.",
+    kind="llm",
+    metadata={"model": "gpt-4o"}
+)
+
+# Access properties
+print(score.name)         # "hallucination"
+print(score.score)        # 0.95
+print(score.label)        # "factual"
+print(score.explanation)  # "The response is..."
+print(score.kind)         # "llm"
+```
+
+## Model Configuration
+
+Phoenix evals support multiple LLM providers:
+
+### OpenAI
+
+```python
+from phoenix.evals.metrics import hallucination
+
+evaluator = hallucination(
+    model="gpt-4o",
+    temperature=0.0,
+    api_key="your-api-key"  # Or set OPENAI_API_KEY env var
+)
+```
+
+### Anthropic
+
+```python
+from phoenix.evals.metrics import hallucination
+
+evaluator = hallucination(
+    model="claude-3-5-sonnet-20241022",
+    temperature=0.0,
+    api_key="your-api-key"  # Or set ANTHROPIC_API_KEY env var
+)
+```
+
+### Azure OpenAI
+
+```python
+import os
+from phoenix.evals.metrics import hallucination
+
+os.environ["AZURE_OPENAI_API_KEY"] = "your-key"
+os.environ["AZURE_OPENAI_ENDPOINT"] = "https://your-resource.openai.azure.com"
+os.environ["AZURE_OPENAI_API_VERSION"] = "2024-02-01"
+
+evaluator = hallucination(
+    model="azure/gpt-4o"
+)
+```
+
+### Google (Gemini)
+
+```python
+from phoenix.evals.metrics import hallucination
+
+evaluator = hallucination(
+    model="gemini-1.5-pro",
+    api_key="your-api-key"  # Or set GOOGLE_API_KEY env var
+)
+```
+
+### LiteLLM (100+ models)
+
+```python
+from phoenix.evals.metrics import hallucination
+
+# Use any LiteLLM-supported model
+evaluator = hallucination(
+    model="together_ai/meta-llama/Llama-3-70b-chat-hf"
+)
+```
+
+## Input Mapping
+
+Map your DataFrame columns to evaluator inputs:
+
+```python
+import pandas as pd
+from phoenix.evals import evaluate_dataframe
+from phoenix.evals.metrics import hallucination
+
+# Your DataFrame has different column names
+df = pd.DataFrame([{
+    "question": "What is Phoenix?",
+    "answer": "Phoenix is an LLM observability tool.",
+    "retrieved_docs": "Phoenix provides tracing and evals."
+}])
+
+# Map to evaluator's expected inputs
+results = evaluate_dataframe(
+    df,
+    evaluators=[hallucination()],
+    input_mapping={
+        "input": "question",
+        "output": "answer",
+        "context": "retrieved_docs"
+    }
+)
+```
+
+## Batch Evaluation
+
+```python
+import pandas as pd
+from phoenix.evals import evaluate_dataframe
+from phoenix.evals.metrics import hallucination, relevance, toxicity
+
+# Load your data
+df = pd.read_csv("evaluation_data.csv")
+
+# Run multiple evaluators in parallel
+results = evaluate_dataframe(
+    df,
+    evaluators=[
+        hallucination(model="gpt-4o"),
+        relevance(model="gpt-4o"),
+        toxicity(model="gpt-4o")
+    ],
+    concurrency=10  # Parallel execution
+)
+
+# Save results
+results.to_csv("evaluation_results.csv")
+```
+
+## Integration with Phoenix Client
+
+```python
+from phoenix.client import Client
+from phoenix.evals import evaluate_dataframe
+from phoenix.evals.metrics import hallucination
+import pandas as pd
+
+# Get traces from Phoenix
+client = Client()
+project = client.projects.get("my-project")
+traces = list(client.traces.list(project.id, limit=100))
+
+# Convert to DataFrame
+data = []
+for trace in traces:
+    for span in trace.spans:
+        data.append({
+            "input": span.attributes.get("input.value"),
+            "output": span.attributes.get("output.value"),
+            "context": span.attributes.get("retrieval.documents")
+        })
+
+df = pd.DataFrame(data)
+
+# Evaluate
+results = evaluate_dataframe(
+    df,
+    evaluators=[hallucination()]
+)
+
+# Upload results back to Phoenix
+for idx, row in results.iterrows():
+    span_id = traces[idx].spans[0].id
+    client.spans.add_annotation(
+        span_id=span_id,
+        name="hallucination",
+        score=row["hallucination_score"],
+        label=row["hallucination_label"]
+    )
+```
+
+## Legacy API (v1.0)
+
+Phoenix evals also supports a legacy API:
+
+```python
+from phoenix.evals import (
+    HallucinationEvaluator,
+    QAEvaluator,
+    RelevanceEvaluator,
+    run_evals
+)
+
+# Legacy evaluators
+hallucination_eval = HallucinationEvaluator()
+qa_eval = QAEvaluator()
+
+results = run_evals(
+    dataframe=df,
+    evaluators=[hallucination_eval, qa_eval],
+    provide_explanation=True
+)
+```
+
+<Note>
+  The new v2.0 API (using `evaluate_dataframe` and built-in metrics) is recommended for new projects.
+</Note>
+
+## Advanced Topics
+
+### Custom Templates
+
+```python
+from phoenix.evals import create_evaluator
+from phoenix.evals.templating import PromptTemplate
+
+template = PromptTemplate(
+    template="""
+    You are an expert evaluator.
+    
+    Task: {task}
+    Response: {output}
+    
+    Evaluate the response on a scale of 1-5.
+    Provide only the number.
+    """,
+    variables=["task", "output"]
+)
+
+evaluator = create_evaluator(
+    name="quality",
+    template=template,
+    model="gpt-4o",
+    output_parser=lambda x: float(x) / 5.0
+)
+```
+
+### Bind Evaluator
+
+Create an evaluator with pre-filled inputs:
+
+```python
+from phoenix.evals import bind_evaluator
+from phoenix.evals.metrics import hallucination
+
+# Create base evaluator
+base_evaluator = hallucination(model="gpt-4o")
+
+# Bind specific context
+bound_evaluator = bind_evaluator(
+    base_evaluator,
+    context="This is the fixed context for all evaluations."
+)
+
+# Now only need to provide input and output
+df = pd.DataFrame([{
+    "input": "What is Phoenix?",
+    "output": "Phoenix is a tool."
+}])
+
+results = evaluate_dataframe(df, evaluators=[bound_evaluator])
+```
+
+## See Also
+
+- [Python Client Reference](/sdk/python/client) - Interact with Phoenix
+- [Python OTEL Reference](/sdk/python/otel) - Set up tracing
+- [Evaluations Guide](/evaluation/overview) - Learn about evaluation concepts
+- [Experiments Guide](/datasets/experiments) - Run experiments with evals

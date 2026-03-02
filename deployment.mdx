@@ -1,0 +1,501 @@
+---
+title: Deployment
+description: Deploy Phoenix for local development, production, or use Phoenix Cloud
+---
+
+Phoenix offers flexible deployment options to suit different use cases, from local development to production-scale deployments.
+
+## Deployment Options
+
+<CardGroup cols={2}>
+  <Card
+    title="Local Development"
+    icon="laptop-code"
+    href="#local-development"
+  >
+    Run Phoenix on your local machine with a single command. Perfect for development and testing.
+  </Card>
+  
+  <Card
+    title="Docker"
+    icon="docker"
+    href="#docker-deployment"
+  >
+    Deploy Phoenix using Docker for containerized environments. Includes Docker Compose for complete setups.
+  </Card>
+  
+  <Card
+    title="Kubernetes"
+    icon="dharmachakra"
+    href="#kubernetes-deployment"
+  >
+    Deploy Phoenix on Kubernetes using Helm charts for production-scale deployments.
+  </Card>
+  
+  <Card
+    title="Phoenix Cloud"
+    icon="cloud"
+    href="#phoenix-cloud"
+  >
+    Use the managed Phoenix Cloud service. No infrastructure to manage, free tier available.
+  </Card>
+</CardGroup>
+
+## Local Development
+
+The simplest way to get started with Phoenix is to run it locally.
+
+### Quick Start
+
+```bash
+python -m phoenix.server.main serve
+```
+
+This launches Phoenix on [http://localhost:6006](http://localhost:6006) with:
+- Web UI on port 6006
+- gRPC endpoint on port 4317 (for receiving traces)
+- SQLite database in the current directory
+
+### Custom Configuration
+
+You can customize the deployment using environment variables:
+
+```bash
+# Change the port
+export PHOENIX_PORT=8080
+
+# Change the host (default is 0.0.0.0)
+export PHOENIX_HOST=127.0.0.1
+
+# Use a specific data directory
+export PHOENIX_WORKING_DIR=/path/to/data
+
+# Use PostgreSQL instead of SQLite
+export PHOENIX_SQL_DATABASE_URL=postgresql://user:password@localhost:5432/phoenix
+
+python -m phoenix.server.main serve
+```
+
+### Running in a Notebook
+
+You can also launch Phoenix from a Jupyter notebook:
+
+```python
+import phoenix as px
+
+session = px.launch_app()
+print(f"Phoenix running at {session.url}")
+```
+
+<Note>
+  When running in a notebook, Phoenix will automatically shut down when the notebook kernel stops.
+</Note>
+
+## Docker Deployment
+
+Docker provides a consistent, isolated environment for running Phoenix.
+
+### Single Container
+
+Run Phoenix as a standalone container:
+
+```bash
+docker run -d \
+  --name phoenix \
+  -p 6006:6006 \
+  -p 4317:4317 \
+  -v phoenix-data:/phoenix/.data \
+  arizephoenix/phoenix:latest
+```
+
+Access Phoenix at [http://localhost:6006](http://localhost:6006).
+
+### Docker Compose with PostgreSQL
+
+For production use, we recommend using PostgreSQL instead of SQLite. Create a `docker-compose.yml`:
+
+```yaml docker-compose.yml
+version: '3.8'
+
+services:
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    ports:
+      - "6006:6006"
+      - "4317:4317"
+      - "9090:9090"  # Prometheus metrics (optional)
+    environment:
+      - PHOENIX_SQL_DATABASE_URL=postgresql://phoenix:phoenix@db:5432/phoenix
+      - PHOENIX_TELEMETRY_ENABLED=false  # Disable telemetry if desired
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+      
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=phoenix
+      - POSTGRES_PASSWORD=phoenix
+      - POSTGRES_DB=phoenix
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U phoenix"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+```
+
+Deploy with:
+
+```bash
+docker compose up -d
+```
+
+### Environment Variables for Docker
+
+Common environment variables for Docker deployments:
+
+| Variable | Description | Example |
+|----------|-------------|----------|
+| `PHOENIX_SQL_DATABASE_URL` | Database connection string | `postgresql://user:pass@host:5432/db` |
+| `PHOENIX_WORKING_DIR` | Data directory | `/phoenix/.data` |
+| `PHOENIX_PORT` | HTTP server port | `6006` |
+| `PHOENIX_HOST` | Bind address | `0.0.0.0` |
+| `PHOENIX_TELEMETRY_ENABLED` | Enable/disable telemetry | `false` |
+
+## Kubernetes Deployment
+
+For production deployments at scale, Phoenix provides Helm charts.
+
+### Prerequisites
+
+- Kubernetes cluster (1.19+)
+- Helm 3.x
+- `kubectl` configured to access your cluster
+
+### Install with Helm
+
+Add the Phoenix Helm repository and install:
+
+```bash
+# Add the Arize Helm repository
+helm repo add arize https://arize-ai.github.io/helm-charts
+helm repo update
+
+# Install Phoenix
+helm install phoenix arize/phoenix \
+  --namespace phoenix \
+  --create-namespace
+```
+
+### Custom Values
+
+Create a `values.yaml` file to customize your deployment:
+
+```yaml values.yaml
+# Replica count
+replicaCount: 2
+
+# Resource limits
+resources:
+  requests:
+    memory: "1Gi"
+    cpu: "500m"
+  limits:
+    memory: "2Gi"
+    cpu: "1000m"
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: phoenix.your-domain.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: phoenix-tls
+      hosts:
+        - phoenix.your-domain.com
+
+# PostgreSQL configuration
+postgresql:
+  enabled: true
+  auth:
+    username: phoenix
+    password: your-secure-password
+    database: phoenix
+  primary:
+    persistence:
+      size: 20Gi
+
+# Environment variables
+env:
+  - name: PHOENIX_TELEMETRY_ENABLED
+    value: "false"
+```
+
+Install with custom values:
+
+```bash
+helm install phoenix arize/phoenix \
+  --namespace phoenix \
+  --create-namespace \
+  --values values.yaml
+```
+
+### External PostgreSQL
+
+To use an existing PostgreSQL instance:
+
+```yaml values.yaml
+# Disable the bundled PostgreSQL
+postgresql:
+  enabled: false
+
+# Configure external database
+env:
+  - name: PHOENIX_SQL_DATABASE_URL
+    value: "postgresql://user:password@external-db:5432/phoenix"
+```
+
+### Upgrading
+
+```bash
+helm upgrade phoenix arize/phoenix \
+  --namespace phoenix \
+  --values values.yaml
+```
+
+### Uninstalling
+
+```bash
+helm uninstall phoenix --namespace phoenix
+```
+
+<Warning>
+  Uninstalling Phoenix will not automatically delete the PostgreSQL data. You'll need to manually delete the PVC if you want to remove all data.
+</Warning>
+
+## Phoenix Cloud
+
+Phoenix Cloud is a fully managed service that eliminates the need to manage infrastructure.
+
+### Benefits
+
+- **Zero infrastructure**: No servers to manage or maintain
+- **Automatic scaling**: Handles any workload size
+- **High availability**: Built-in redundancy and backups
+- **Free tier**: Generous free tier for development and small projects
+- **Collaboration**: Built-in team features and access controls
+
+### Getting Started
+
+<Steps>
+  <Step title="Sign Up">
+    Create a free account at [app.phoenix.arize.com](https://app.phoenix.arize.com).
+  </Step>
+  
+  <Step title="Get Your API Key">
+    Navigate to Settings → API Keys and create a new API key.
+  </Step>
+  
+  <Step title="Configure Your Application">
+    Update your application to send traces to Phoenix Cloud:
+    
+    ```python
+    import os
+    from phoenix.otel import register
+    
+    # Set your Phoenix Cloud credentials
+    os.environ["PHOENIX_CLIENT_HEADERS"] = f"api_key={your_api_key}"
+    os.environ["PHOENIX_COLLECTOR_ENDPOINT"] = "https://app.phoenix.arize.com"
+    
+    # Register and instrument as usual
+    tracer_provider = register(project_name="my-app")
+    ```
+  </Step>
+  
+  <Step title="Start Tracing">
+    Run your application. Traces will automatically appear in your Phoenix Cloud dashboard.
+  </Step>
+</Steps>
+
+### Pricing
+
+Phoenix Cloud offers:
+- **Free tier**: Suitable for development and small projects
+- **Pay-as-you-go**: Scale up as needed
+- **Enterprise**: Custom pricing for large deployments
+
+Visit [phoenix.arize.com/pricing](https://phoenix.arize.com/pricing) for current pricing details.
+
+## AWS Deployment
+
+Deploy Phoenix on AWS using CloudFormation templates.
+
+### CloudFormation Templates
+
+Phoenix provides pre-built CloudFormation templates for AWS deployment. These templates are available in the [GitHub repository](https://github.com/Arize-ai/phoenix/tree/main/tutorials/deployment/AWS%20Cloudformation).
+
+Templates include:
+- **phoenix-network.yml**: VPC and networking setup
+- **app.yml**: Phoenix application deployment
+- **phoenix-auth.yml**: Authentication configuration (optional)
+
+<Note>
+  For detailed AWS deployment instructions, see the templates in the `tutorials/deployment/AWS Cloudformation` directory of the Phoenix repository.
+</Note>
+
+## Security Considerations
+
+### Authentication
+
+By default, Phoenix runs without authentication. For production deployments, consider:
+
+1. **Network isolation**: Use firewalls, VPCs, or security groups to restrict access
+2. **Reverse proxy**: Use nginx or similar with authentication
+3. **Phoenix Cloud**: Built-in authentication and access controls
+
+See the [Security and Privacy documentation](https://arize.com/docs/phoenix/self-hosting/security/privacy) for more details.
+
+### Database Security
+
+When using PostgreSQL:
+- Use strong passwords
+- Enable SSL/TLS connections
+- Restrict network access to the database
+- Regular backups
+
+### Data Privacy
+
+Phoenix stores:
+- Trace data (LLM inputs/outputs)
+- Evaluation results
+- Datasets
+
+Ensure compliance with your data privacy requirements:
+- Use encryption at rest for sensitive data
+- Configure data retention policies
+- Consider data anonymization
+
+<Warning>
+  LLM traces may contain sensitive information. Ensure your deployment follows your organization's data handling policies.
+</Warning>
+
+## Monitoring and Observability
+
+### Prometheus Metrics
+
+Phoenix exposes Prometheus metrics on port 9090:
+
+```yaml
+# Prometheus scrape config
+scrape_configs:
+  - job_name: 'phoenix'
+    static_configs:
+      - targets: ['phoenix:9090']
+```
+
+### Health Checks
+
+Phoenix provides health check endpoints:
+
+- **Liveness**: `GET /health`
+- **Readiness**: `GET /ready`
+
+Use these for Kubernetes health probes:
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 6006
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 6006
+  initialDelaySeconds: 5
+  periodSeconds: 5
+```
+
+## Performance Tuning
+
+### Database Optimization
+
+For high-throughput deployments:
+
+1. **Use PostgreSQL** instead of SQLite
+2. **Connection pooling**: Configure appropriate pool sizes
+3. **Indexing**: Phoenix automatically creates necessary indexes
+4. **Regular maintenance**: Run VACUUM and ANALYZE on PostgreSQL
+
+### Resource Allocation
+
+Recommended resources based on trace volume:
+
+| Traces/Day | CPU | Memory | Database |
+|------------|-----|--------|----------|
+| < 10k | 500m | 1Gi | SQLite or small PostgreSQL |
+| 10k - 100k | 1000m | 2Gi | PostgreSQL (2 vCPU, 4GB) |
+| 100k - 1M | 2000m | 4Gi | PostgreSQL (4 vCPU, 8GB) |
+| > 1M | Contact us | Contact us | Enterprise setup |
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Traces not appearing in Phoenix">
+    Check:
+    1. Phoenix server is running and accessible
+    2. Firewall rules allow connections to port 6006 and 4317
+    3. Application is configured with correct endpoint
+    4. No network connectivity issues
+  </Accordion>
+  
+  <Accordion title="Database connection errors">
+    Verify:
+    1. Database is running and accessible
+    2. Connection string is correct
+    3. Database user has appropriate permissions
+    4. For PostgreSQL, ensure the database exists
+  </Accordion>
+  
+  <Accordion title="High memory usage">
+    Solutions:
+    1. Increase memory limits
+    2. Configure shorter data retention
+    3. Archive old traces
+    4. Consider scaling horizontally
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Tracing Guide"
+    icon="diagram-project"
+    href="/tracing/overview"
+  >
+    Learn how to instrument your applications to send traces to Phoenix.
+  </Card>
+  
+  <Card
+    title="Security Guide"
+    icon="shield"
+    href="https://arize.com/docs/phoenix/self-hosting/security/privacy"
+  >
+    Learn about security best practices and privacy considerations.
+  </Card>
+</CardGroup>

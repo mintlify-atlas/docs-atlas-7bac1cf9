@@ -1,0 +1,163 @@
+---
+title: Datasets & Experiments Overview
+description: Learn how datasets enable experimentation, evaluation, and fine-tuning in Phoenix
+---
+
+Datasets in Phoenix are collections of input/output examples that enable systematic experimentation, evaluation, and fine-tuning of your AI applications. By organizing your data into versioned datasets, you can run experiments, compare results, and track improvements over time.
+
+## What are Datasets?
+
+A **dataset** in Phoenix is a structured collection of examples, where each example consists of:
+
+- **Input**: The data provided to your model or application (e.g., user prompts, questions)
+- **Output**: The expected or reference output (e.g., correct answers, ideal responses)
+- **Metadata**: Additional information about the example (e.g., difficulty level, category, source)
+
+Datasets are automatically versioned, allowing you to track changes and compare experiments across different versions.
+
+## What are Experiments?
+
+An **experiment** is a systematic evaluation of your AI application's performance on a dataset. Each experiment:
+
+- Runs a **task** (your AI application logic) on every example in a dataset
+- Captures the output and execution trace for each run
+- Optionally evaluates the outputs using **evaluators** (metrics and quality checks)
+- Stores results for comparison and analysis
+
+## Key Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Model Evaluation" icon="chart-line">
+    Test your models against benchmarks and ground truth data to measure accuracy and quality.
+  </Card>
+  <Card title="Regression Testing" icon="shield-check">
+    Ensure changes to your application don't degrade performance on known examples.
+  </Card>
+  <Card title="A/B Testing" icon="flask">
+    Compare different models, prompts, or configurations to find the best approach.
+  </Card>
+  <Card title="Fine-tuning Preparation" icon="brain">
+    Curate high-quality datasets for training and fine-tuning language models.
+  </Card>
+</CardGroup>
+
+## Workflow Overview
+
+<Steps>
+  <Step title="Create a Dataset">
+    Build datasets from production traces, upload CSV/DataFrame, or manually create examples.
+    
+    ```python
+    from phoenix.client import Client
+    
+    client = Client()
+    
+    # Create from lists of inputs and outputs
+    dataset = client.datasets.create_dataset(
+        name="qa-dataset",
+        inputs=[{"question": "What is AI?"}, {"question": "What is ML?"}],
+        outputs=[{"answer": "Artificial Intelligence is..."}, {"answer": "Machine Learning is..."}]
+    )
+    ```
+  </Step>
+  
+  <Step title="Run an Experiment">
+    Execute your task function on each example and capture results.
+    
+    ```python
+    from phoenix.experiments import run_experiment
+    
+    def my_task(input):
+        # Your application logic
+        question = input["question"]
+        return {"answer": generate_answer(question)}
+    
+    experiment = run_experiment(
+        dataset=dataset,
+        task=my_task,
+        experiment_name="baseline-v1"
+    )
+    ```
+  </Step>
+  
+  <Step title="Evaluate Results">
+    Apply evaluators to measure quality, correctness, and other metrics.
+    
+    ```python
+    from phoenix.experiments.evaluators import create_evaluator
+    
+    # Add evaluation
+    evaluated = run_experiment(
+        dataset=dataset,
+        task=my_task,
+        evaluators=[
+            create_evaluator("exact_match"),
+            create_evaluator("llm_judge")
+        ]
+    )
+    ```
+  </Step>
+  
+  <Step title="Compare & Analyze">
+    View results in the Phoenix UI and compare across experiments.
+    
+    Access the experiment URL to see detailed breakdowns, trace links, and side-by-side comparisons.
+  </Step>
+</Steps>
+
+## Dataset Versioning
+
+Phoenix automatically versions your datasets:
+
+- Each modification creates a new **version**
+- Experiments are tied to specific versions for reproducibility
+- You can retrieve and compare any historical version
+
+```python
+# Get specific version
+versioned_dataset = client.datasets.get_dataset(
+    dataset="qa-dataset",
+    version_id="v_abc123"
+)
+
+# List all versions
+versions = client.datasets.get_dataset_versions(dataset="qa-dataset")
+for version in versions:
+    print(f"Version {version['version_id']} created at {version['created_at']}")
+```
+
+## Trace Association
+
+Datasets can be linked to production traces, enabling you to:
+
+- Create datasets from real user interactions
+- Track which traces contributed to each example
+- Debug issues by reviewing original execution context
+
+```python
+# Create dataset with span ID associations
+dataset = client.datasets.create_dataset(
+    name="production-examples",
+    dataframe=spans_df,
+    input_keys=["question"],
+    output_keys=["answer"],
+    span_id_key="context.span_id"  # Links to traces
+)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Creating Datasets" icon="database" href="/datasets/creating-datasets">
+    Learn different ways to create and populate datasets
+  </Card>
+  <Card title="Running Experiments" icon="flask" href="/datasets/experiments">
+    Execute experiments and evaluate your AI applications
+  </Card>
+  <Card title="Dataset Versioning" icon="code-branch" href="/datasets/versioning">
+    Manage versions, tags, and export datasets
+  </Card>
+  <Card title="Evaluators" icon="check-circle" href="/evaluation/custom-evaluators">
+    Understand built-in and custom evaluators
+  </Card>
+</CardGroup>

@@ -1,0 +1,597 @@
+---
+title: 'Pre-built Metrics'
+description: 'Ready-to-use evaluation metrics for common LLM tasks'
+icon: 'list-check'
+---
+
+Phoenix provides battle-tested pre-built metrics for common evaluation tasks. These evaluators are optimized, validated, and ready to use out of the box.
+
+## Available Metrics
+
+All pre-built metrics use LLM-as-a-judge with carefully crafted prompts. They require an LLM instance and support tool calling for structured outputs.
+
+<CardGroup cols={2}>
+  <Card title="Faithfulness" icon="check-circle">
+    Detect hallucinations in grounded responses
+  </Card>
+  <Card title="Correctness" icon="bullseye">
+    Evaluate factual accuracy
+  </Card>
+  <Card title="Conciseness" icon="compress">
+    Check if responses are appropriately brief
+  </Card>
+  <Card title="Document Relevance" icon="file-magnifying-glass">
+    Assess retrieval quality in RAG
+  </Card>
+  <Card title="Tool Selection" icon="wrench">
+    Validate agent tool choices
+  </Card>
+  <Card title="Tool Invocation" icon="gears">
+    Check tool call correctness
+  </Card>
+  <Card title="Refusal" icon="ban">
+    Detect when models decline to answer
+  </Card>
+  <Card title="Exact Match" icon="equals">
+    Simple string equality check
+  </Card>
+</CardGroup>
+
+## Faithfulness
+
+Detects hallucinations by checking if a response is faithful to the provided context.
+
+### Use Cases
+
+- RAG applications where responses must be grounded in retrieved documents
+- Question-answering systems with knowledge bases
+- Summarization tasks that must preserve source material accuracy
+
+### Usage
+
+```python
+from phoenix.evals.metrics import FaithfulnessEvaluator
+from phoenix.evals import LLM
+
+llm = LLM(provider="openai", model="gpt-4o-mini")
+faithfulness_eval = FaithfulnessEvaluator(llm=llm)
+
+scores = faithfulness_eval.evaluate({
+    "input": "What is the capital of France?",
+    "output": "Paris is the capital of France.",
+    "context": "Paris is the capital and largest city of France."
+})
+
+print(scores[0].label)  # "faithful" or "unfaithful"
+print(scores[0].score)  # 1.0 if faithful, 0.0 if unfaithful
+```
+
+### Input Schema
+
+<ParamField path="input" type="string" required>
+  The input query or question
+</ParamField>
+
+<ParamField path="output" type="string" required>
+  The model's response to evaluate
+</ParamField>
+
+<ParamField path="context" type="string" required>
+  The reference context or source material
+</ParamField>
+
+### Output
+
+<ResponseField name="label" type="string">
+  Either `"faithful"` or `"unfaithful"`
+</ResponseField>
+
+<ResponseField name="score" type="float">
+  `1.0` if faithful, `0.0` if unfaithful
+</ResponseField>
+
+<ResponseField name="explanation" type="string">
+  LLM's reasoning for the classification
+</ResponseField>
+
+## Correctness
+
+Evaluates whether a response is factually accurate and complete.
+
+### Use Cases
+
+- Validating answers to factual questions
+- Checking knowledge retention in educational apps
+- Verifying accuracy of generated content
+
+### Usage
+
+```python
+from phoenix.evals.metrics import CorrectnessEvaluator
+from phoenix.evals import LLM
+
+llm = LLM(provider="openai", model="gpt-4o-mini")
+correctness_eval = CorrectnessEvaluator(llm=llm)
+
+scores = correctness_eval.evaluate({
+    "input": "What is the capital of France?",
+    "output": "Paris is the capital of France."
+})
+
+print(scores[0].label)  # "correct" or "incorrect"
+print(scores[0].score)  # 1.0 if correct, 0.0 if incorrect
+```
+
+### Input Schema
+
+<ParamField path="input" type="string" required>
+  The input query or question
+</ParamField>
+
+<ParamField path="output" type="string" required>
+  The model's response to evaluate
+</ParamField>
+
+### Output
+
+<ResponseField name="label" type="string">
+  Either `"correct"` or `"incorrect"`
+</ResponseField>
+
+<ResponseField name="score" type="float">
+  `1.0` if correct, `0.0` if incorrect
+</ResponseField>
+
+## Conciseness
+
+Checks whether a response is appropriately brief without unnecessary verbosity.
+
+### Use Cases
+
+- Ensuring chatbots provide succinct answers
+- Optimizing token usage in production systems
+- Evaluating summary quality
+
+### Usage
+
+```python
+from phoenix.evals.metrics import ConcisenessEvaluator
+from phoenix.evals import LLM
+
+llm = LLM(provider="openai", model="gpt-4o-mini")
+conciseness_eval = ConcisenessEvaluator(llm=llm)
+
+scores = conciseness_eval.evaluate({
+    "input": "What is the capital of France?",
+    "output": "Paris."
+})
+
+print(scores[0].label)  # "concise" or "verbose"
+print(scores[0].score)  # 1.0 if concise, 0.0 if verbose
+```
+
+### Input Schema
+
+<ParamField path="input" type="string" required>
+  The input query or question
+</ParamField>
+
+<ParamField path="output" type="string" required>
+  The model's response to evaluate
+</ParamField>
+
+### Output
+
+<ResponseField name="label" type="string">
+  Either `"concise"` or `"verbose"`
+</ResponseField>
+
+<ResponseField name="score" type="float">
+  `1.0` if concise, `0.0` if verbose
+</ResponseField>
+
+## Document Relevance
+
+Determines if a retrieved document contains information relevant to answering a question.
+
+### Use Cases
+
+- Evaluating retriever quality in RAG systems
+- Measuring search result relevance
+- Optimizing document ranking algorithms
+
+### Usage
+
+```python
+from phoenix.evals.metrics import DocumentRelevanceEvaluator
+from phoenix.evals import LLM
+
+llm = LLM(provider="openai", model="gpt-4o-mini")
+relevance_eval = DocumentRelevanceEvaluator(llm=llm)
+
+scores = relevance_eval.evaluate({
+    "input": "What is the capital of France?",
+    "document_text": "Paris is the capital and largest city of France, located on the Seine River."
+})
+
+print(scores[0].label)  # "relevant" or "unrelated"
+print(scores[0].score)  # 1.0 if relevant, 0.0 if unrelated
+```
+
+### Input Schema
+
+<ParamField path="input" type="string" required>
+  The query or question
+</ParamField>
+
+<ParamField path="document_text" type="string" required>
+  The retrieved document to evaluate
+</ParamField>
+
+### Output
+
+<ResponseField name="label" type="string">
+  Either `"relevant"` or `"unrelated"`
+</ResponseField>
+
+<ResponseField name="score" type="float">
+  `1.0` if relevant, `0.0` if unrelated
+</ResponseField>
+
+## Tool Selection
+
+Evaluates whether an AI agent selected the correct tool(s) for a given task.
+
+### Use Cases
+
+- Validating agent decision-making
+- Optimizing tool descriptions and schemas
+- Measuring agent routing accuracy
+
+### Usage
+
+```python
+from phoenix.evals.metrics import ToolSelectionEvaluator
+from phoenix.evals import LLM
+
+llm = LLM(provider="openai", model="gpt-4o-mini")
+tool_selection_eval = ToolSelectionEvaluator(llm=llm)
+
+scores = tool_selection_eval.evaluate({
+    "input": "User: What is the weather in San Francisco?",
+    "available_tools": """
+WeatherTool: Get the current weather for a location.
+NewsTool: Stay connected to global events.
+MusicTool: Create playlists and search for music.
+    """,
+    "tool_selection": "WeatherTool(location='San Francisco')"
+})
+
+print(scores[0].label)  # "correct" or "incorrect"
+print(scores[0].score)  # 1.0 if correct, 0.0 if incorrect
+```
+
+### Input Schema
+
+<ParamField path="input" type="string" required>
+  The input query or conversation context
+</ParamField>
+
+<ParamField path="available_tools" type="string" required>
+  Description of available tools (plain text or JSON)
+</ParamField>
+
+<ParamField path="tool_selection" type="string" required>
+  The tool(s) selected by the agent
+</ParamField>
+
+### Output
+
+<ResponseField name="label" type="string">
+  Either `"correct"` or `"incorrect"`
+</ResponseField>
+
+<ResponseField name="score" type="float">
+  `1.0` if correct tool selection, `0.0` if incorrect
+</ResponseField>
+
+## Tool Invocation
+
+Validates that a tool was invoked correctly with proper arguments and formatting.
+
+### Use Cases
+
+- Ensuring agents use tools properly
+- Detecting hallucinated parameters
+- Validating argument safety (no PII leakage)
+
+### Evaluation Criteria
+
+**Correct invocation requires:**
+- Properly structured JSON (if applicable)
+- All required parameters present
+- No hallucinated/nonexistent fields
+- Argument values match query and schema
+- No unsafe content (PII, sensitive data)
+
+**Incorrect invocation includes:**
+- Missing required parameters
+- Hallucinated fields not in schema
+- Malformed JSON
+- Wrong argument values
+- Unsafe content in arguments
+
+### Usage
+
+```python
+from phoenix.evals.metrics import ToolInvocationEvaluator
+from phoenix.evals import LLM
+
+llm = LLM(provider="openai", model="gpt-4o-mini")
+tool_invocation_eval = ToolInvocationEvaluator(llm=llm)
+
+scores = tool_invocation_eval.evaluate({
+    "input": "User: Book a flight from NYC to LA for tomorrow",
+    "available_tools": '''
+{
+    "name": "book_flight",
+    "description": "Book a flight between two cities",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "origin": {"type": "string", "description": "Departure city code"},
+            "destination": {"type": "string", "description": "Arrival city code"},
+            "date": {"type": "string", "description": "Flight date in YYYY-MM-DD"}
+        },
+        "required": ["origin", "destination", "date"]
+    }
+}
+    ''',
+    "tool_selection": 'book_flight(origin="NYC", destination="LA", date="2024-01-15")'
+})
+
+print(scores[0].label)  # "correct" or "incorrect"
+print(scores[0].score)  # 1.0 if correct, 0.0 if incorrect
+```
+
+### Input Schema
+
+<ParamField path="input" type="string" required>
+  The conversation context or user query
+</ParamField>
+
+<ParamField path="available_tools" type="string" required>
+  Tool schemas (JSON schema or human-readable format)
+</ParamField>
+
+<ParamField path="tool_selection" type="string" required>
+  The tool invocation(s) made by the agent
+</ParamField>
+
+### Output
+
+<ResponseField name="label" type="string">
+  Either `"correct"` or `"incorrect"`
+</ResponseField>
+
+<ResponseField name="score" type="float">
+  `1.0` if correct invocation, `0.0` if incorrect
+</ResponseField>
+
+## Refusal
+
+Detects when an LLM refuses or declines to answer a query.
+
+### Use Cases
+
+- Monitoring over-refusal in production systems
+- Detecting safety filter triggers
+- Measuring assistant compliance rates
+
+<Note>
+  This metric is use-case agnostic: it only detects whether a refusal occurred, not whether the refusal was appropriate.
+</Note>
+
+### Usage
+
+```python
+from phoenix.evals.metrics import RefusalEvaluator
+from phoenix.evals import LLM
+
+llm = LLM(provider="openai", model="gpt-4o-mini")
+refusal_eval = RefusalEvaluator(llm=llm)
+
+scores = refusal_eval.evaluate({
+    "input": "What is the capital of France?",
+    "output": "I'm sorry, I can only help with technical questions."
+})
+
+print(scores[0].label)  # "refused" or "answered"
+print(scores[0].score)  # 1.0 if refused, 0.0 if answered
+```
+
+### Detected Refusal Types
+
+- Direct refusals: "I cannot help with that"
+- Deflections: "Let me help you with something else"
+- Scope disclaimers: "That's outside my capabilities"
+- Non-answers: Response doesn't address the question
+
+### Input Schema
+
+<ParamField path="input" type="string" required>
+  The user's query or question
+</ParamField>
+
+<ParamField path="output" type="string" required>
+  The model's response to evaluate
+</ParamField>
+
+### Output
+
+<ResponseField name="label" type="string">
+  Either `"refused"` or `"answered"`
+</ResponseField>
+
+<ResponseField name="score" type="float">
+  `1.0` if refused, `0.0` if answered
+</ResponseField>
+
+<ResponseField name="direction" type="string">
+  `"neutral"` - refusals can be good or bad depending on context
+</ResponseField>
+
+## Exact Match
+
+Simple code-based evaluator that checks if two strings are exactly equal.
+
+### Use Cases
+
+- Validating structured outputs (IDs, codes, formats)
+- Testing deterministic responses
+- Baseline evaluation metric
+
+### Usage
+
+```python
+from phoenix.evals.metrics import exact_match
+
+# Direct usage
+scores = exact_match.evaluate({
+    "output": "Paris",
+    "expected": "Paris"
+})
+
+print(scores[0].score)  # 1.0 (match)
+
+# With input mapping
+scores = exact_match.evaluate(
+    {"prediction": "Paris", "gold": "Paris"},
+    input_mapping={"output": "prediction", "expected": "gold"}
+)
+
+print(scores[0].score)  # 1.0
+```
+
+<Warning>
+  Exact match performs no normalization. "Paris" ≠ "paris" ≠ " Paris "
+</Warning>
+
+### Input Schema
+
+<ParamField path="output" type="string" required>
+  The output to check
+</ParamField>
+
+<ParamField path="expected" type="string" required>
+  The expected output
+</ParamField>
+
+### Output
+
+<ResponseField name="score" type="float">
+  `1.0` if exact match, `0.0` otherwise
+</ResponseField>
+
+<ResponseField name="kind" type="string">
+  `"code"` - this is a code-based evaluator
+</ResponseField>
+
+## Metrics Comparison Table
+
+| Metric | Kind | Inputs | Use Case |
+|--------|------|--------|----------|
+| **Faithfulness** | LLM | input, output, context | Detect hallucinations in RAG |
+| **Correctness** | LLM | input, output | Validate factual accuracy |
+| **Conciseness** | LLM | input, output | Check response brevity |
+| **Document Relevance** | LLM | input, document_text | Evaluate retrieval quality |
+| **Tool Selection** | LLM | input, available_tools, tool_selection | Validate agent decisions |
+| **Tool Invocation** | LLM | input, available_tools, tool_selection | Check tool call correctness |
+| **Refusal** | LLM | input, output | Detect model refusals |
+| **Exact Match** | Code | output, expected | String equality |
+
+## Using Multiple Metrics
+
+Combine multiple metrics for comprehensive evaluation:
+
+```python
+from phoenix.evals.metrics import (
+    FaithfulnessEvaluator,
+    CorrectnessEvaluator,
+    ConcisenessEvaluator
+)
+from phoenix.evals import evaluate_dataframe, LLM
+import pandas as pd
+
+llm = LLM(provider="openai", model="gpt-4o-mini")
+
+# Create evaluators
+faithfulness_eval = FaithfulnessEvaluator(llm=llm)
+correctness_eval = CorrectnessEvaluator(llm=llm)
+conciseness_eval = ConcisenessEvaluator(llm=llm)
+
+# Prepare data
+df = pd.DataFrame([
+    {
+        "input": "What is the capital of France?",
+        "output": "Paris is the capital of France.",
+        "context": "Paris is the capital and largest city of France."
+    },
+    {
+        "input": "What is machine learning?",
+        "output": "ML is a type of AI that learns from data.",
+        "context": "Machine learning is a subset of artificial intelligence."
+    }
+])
+
+# Run all evaluations
+results_df = evaluate_dataframe(
+    dataframe=df,
+    evaluators=[faithfulness_eval, correctness_eval, conciseness_eval]
+)
+
+# Results include scores from all three metrics
+print(results_df.columns)
+# ['input', 'output', 'context',
+#  'faithfulness_execution_details', 'faithfulness_score',
+#  'correctness_execution_details', 'correctness_score',
+#  'conciseness_execution_details', 'conciseness_score']
+```
+
+## Customizing Pre-built Metrics
+
+You can customize pre-built metrics by accessing their prompts:
+
+```python
+from phoenix.evals.metrics import FaithfulnessEvaluator
+from phoenix.evals import ClassificationEvaluator, LLM
+
+llm = LLM(provider="openai", model="gpt-4o-mini")
+
+# Create custom version with modified prompt
+custom_evaluator = ClassificationEvaluator(
+    name="custom_faithfulness",
+    llm=llm,
+    prompt_template="""
+[Your custom prompt based on FaithfulnessEvaluator.PROMPT]
+
+Query: {input}
+Context: {context}
+Response: {output}
+
+Is the response faithful to the context?
+    """,
+    choices={"faithful": 1.0, "unfaithful": 0.0}
+)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Custom Evaluators" icon="code" href="/evaluation/custom-evaluators">
+    Build your own evaluation logic
+  </Card>
+  <Card title="Batch Evaluation" icon="layer-group" href="/evaluation/batch-evaluation">
+    Evaluate datasets at scale
+  </Card>
+</CardGroup>

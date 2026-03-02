@@ -1,0 +1,370 @@
+---
+title: Projects
+description: Organize and isolate traces using projects in Phoenix
+---
+
+Projects provide a way to organize and isolate traces in Phoenix. Each project maintains separate traces, evaluations, and datasets, making it easy to manage multiple applications or environments.
+
+## What are Projects?
+
+A project is a logical container for traces from a specific application, environment, or use case. Projects help you:
+
+- **Isolate** traces from different applications
+- **Organize** development, staging, and production environments
+- **Separate** different experiments or features
+- **Control access** to specific trace data (Phoenix Cloud)
+
+## Setting Project Name
+
+### Using `register()`
+
+The recommended way to set the project name:
+
+```python
+from phoenix.otel import register
+
+tracer_provider = register(
+    project_name="my-application",
+    auto_instrument=True
+)
+```
+
+### Using Environment Variables
+
+Set the project name via environment variable:
+
+```bash
+export PHOENIX_PROJECT_NAME="my-application"
+```
+
+```python
+from phoenix.otel import register
+
+# Uses PHOENIX_PROJECT_NAME from environment
+tracer_provider = register(auto_instrument=True)
+```
+
+### Using Resource Attributes
+
+Set project name in OpenTelemetry resource:
+
+```python
+from opentelemetry.sdk.resources import Resource
+from phoenix.otel import TracerProvider, PROJECT_NAME
+
+resource = Resource({
+    PROJECT_NAME: "my-application",
+    "service.version": "1.0.0"
+})
+
+tracer_provider = TracerProvider(resource=resource)
+```
+
+## Project Naming Best Practices
+
+<Tabs>
+  <Tab title="Application-Based">
+    ```python
+    # Separate projects per application
+    register(project_name="customer-chatbot")
+    register(project_name="document-qa")
+    register(project_name="code-assistant")
+    ```
+  </Tab>
+
+  <Tab title="Environment-Based">
+    ```python
+    import os
+    
+    # Separate projects per environment
+    env = os.getenv("ENVIRONMENT", "development")
+    register(project_name=f"my-app-{env}")
+    
+    # Results in:
+    # - my-app-development
+    # - my-app-staging
+    # - my-app-production
+    ```
+  </Tab>
+
+  <Tab title="Feature-Based">
+    ```python
+    # Separate projects for experiments
+    register(project_name="rag-baseline")
+    register(project_name="rag-with-reranking")
+    register(project_name="rag-hybrid-search")
+    ```
+  </Tab>
+</Tabs>
+
+## Switching Between Projects
+
+You can switch projects dynamically in certain scenarios:
+
+### Context Manager (Deprecated)
+
+<Warning>
+  The `using_project` context manager is deprecated and will be removed in a future release. It has been moved to `openinference-instrumentation` as `dangerously_using_project`.
+</Warning>
+
+```python
+from phoenix.trace import using_project
+
+# Default project
+tracer_provider = register(project_name="default-project")
+
+# Temporarily switch to different project
+with using_project("experiment-project"):
+    # Traces created here go to "experiment-project"
+    result = run_experiment()
+
+# Back to "default-project"
+```
+
+<Note>
+  This approach modifies span resources dynamically and should not be used in production or complex OpenTelemetry setups.
+</Note>
+
+### Multiple TracerProviders
+
+For production use, create separate tracer providers:
+
+```python
+from phoenix.otel import TracerProvider, BatchSpanProcessor
+from opentelemetry.sdk.resources import Resource
+from phoenix.otel import PROJECT_NAME
+
+# Create provider for main application
+main_resource = Resource({PROJECT_NAME: "main-app"})
+main_provider = TracerProvider(resource=main_resource)
+main_provider.add_span_processor(
+    BatchSpanProcessor(endpoint="http://localhost:6006/v1/traces")
+)
+
+# Create provider for experimental features
+experiment_resource = Resource({PROJECT_NAME: "experiments"})
+experiment_provider = TracerProvider(resource=experiment_resource)
+experiment_provider.add_span_processor(
+    BatchSpanProcessor(endpoint="http://localhost:6006/v1/traces")
+)
+
+# Use specific providers
+main_tracer = main_provider.get_tracer("main")
+experiment_tracer = experiment_provider.get_tracer("experiments")
+
+with main_tracer.start_as_current_span("main-operation"):
+    # Goes to "main-app" project
+    pass
+
+with experiment_tracer.start_as_current_span("experiment"):
+    # Goes to "experiments" project
+    pass
+```
+
+## Viewing Projects in Phoenix
+
+### Phoenix UI
+
+The Phoenix UI provides a project selector:
+
+1. Open Phoenix at http://localhost:6006
+2. Click the project dropdown in the top navigation
+3. Select the project you want to view
+4. All traces, evaluations, and datasets filter to the selected project
+
+### Phoenix Client
+
+Query projects programmatically:
+
+```python
+import phoenix as px
+
+# Connect to Phoenix
+client = px.Client(endpoint="http://localhost:6006")
+
+# List all projects
+projects = client.list_projects()
+for project in projects:
+    print(f"Project: {project.name}")
+    print(f"  Traces: {project.trace_count}")
+    print(f"  Created: {project.created_at}")
+```
+
+## Project-Level Operations
+
+### Filtering by Project
+
+All Phoenix operations are project-scoped:
+
+```python
+import phoenix as px
+
+client = px.Client()
+
+# Get spans for specific project
+spans = client.get_spans(
+    project_name="my-application",
+    limit=100
+)
+
+# Get evaluations for specific project  
+evaluations = client.get_evaluations(
+    project_name="my-application"
+)
+```
+
+### Project Settings
+
+Configure project-level settings:
+
+<Tabs>
+  <Tab title="Retention Policy">
+    Control how long traces are retained (Phoenix Cloud):
+    
+    ```python
+    # Set via Phoenix UI:
+    # Project Settings → Data Retention → Set retention period
+    ```
+  </Tab>
+
+  <Tab title="Access Control">
+    Manage who can view and edit project data (Phoenix Cloud):
+    
+    ```python
+    # Set via Phoenix UI:
+    # Project Settings → Access Control → Add team members
+    ```
+  </Tab>
+</Tabs>
+
+## Real-World Examples
+
+### Multi-Environment Setup
+
+```python
+import os
+from phoenix.otel import register
+
+def setup_tracing():
+    env = os.getenv("ENVIRONMENT", "development")
+    api_key = os.getenv("PHOENIX_API_KEY")
+    
+    if env == "production":
+        return register(
+            project_name="my-app-prod",
+            endpoint="https://app.phoenix.arize.com",
+            api_key=api_key,
+            batch=True,
+            auto_instrument=True
+        )
+    elif env == "staging":
+        return register(
+            project_name="my-app-staging",
+            endpoint="https://app.phoenix.arize.com",
+            api_key=api_key,
+            batch=True,
+            auto_instrument=True
+        )
+    else:
+        return register(
+            project_name="my-app-dev",
+            endpoint="http://localhost:6006",
+            auto_instrument=True
+        )
+
+if __name__ == "__main__":
+    setup_tracing()
+    # Run application
+```
+
+### A/B Testing with Projects
+
+```python
+from phoenix.otel import TracerProvider, BatchSpanProcessor
+from opentelemetry.sdk.resources import Resource
+from phoenix.otel import PROJECT_NAME
+import random
+
+# Create providers for each variant
+variant_a_provider = TracerProvider(
+    resource=Resource({PROJECT_NAME: "experiment-variant-a"}),
+    verbose=False
+)
+variant_a_provider.add_span_processor(
+    BatchSpanProcessor(endpoint="http://localhost:6006/v1/traces")
+)
+
+variant_b_provider = TracerProvider(
+    resource=Resource({PROJECT_NAME: "experiment-variant-b"}),
+    verbose=False
+)
+variant_b_provider.add_span_processor(
+    BatchSpanProcessor(endpoint="http://localhost:6006/v1/traces")
+)
+
+def get_tracer(user_id: str):
+    """Route users to different variants."""
+    if hash(user_id) % 2 == 0:
+        return variant_a_provider.get_tracer("variant-a")
+    else:
+        return variant_b_provider.get_tracer("variant-b")
+
+# Use in application
+tracer = get_tracer("user-123")
+with tracer.start_as_current_span("process-request"):
+    # Traces go to appropriate project based on variant
+    result = process_request()
+```
+
+### Microservices Architecture
+
+```python
+# service_a.py
+from phoenix.otel import register
+
+register(
+    project_name="service-a",
+    endpoint="http://phoenix:6006",
+    auto_instrument=True
+)
+```
+
+```python
+# service_b.py  
+from phoenix.otel import register
+
+register(
+    project_name="service-b",
+    endpoint="http://phoenix:6006",
+    auto_instrument=True
+)
+```
+
+Each service sends traces to its own project while maintaining trace context propagation across services.
+
+## Default Project
+
+If no project name is specified, Phoenix uses a default:
+
+```python
+from phoenix.otel import register
+
+# Uses "default" as project name
+register(auto_instrument=True)
+```
+
+<Note>
+  The default project name is determined by the `PHOENIX_PROJECT_NAME` environment variable, or "default" if not set.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Sessions" icon="users" href="/tracing/sessions">
+    Group related traces into sessions
+  </Card>
+  
+  <Card title="Annotations" icon="pen" href="/tracing/annotations">
+    Add feedback and evaluations to traces
+  </Card>
+</CardGroup>

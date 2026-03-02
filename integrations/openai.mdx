@@ -1,0 +1,275 @@
+---
+title: "OpenAI Integration"
+description: Auto-instrument OpenAI SDK calls with Phoenix for complete observability of GPT models, embeddings, and function calling
+---
+
+Phoenix provides auto-instrumentation for the [OpenAI Python SDK](https://github.com/openai/openai-python) and [OpenAI Node.js SDK](https://github.com/openai/openai-node), allowing you to trace all calls to OpenAI's APIs including GPT models, embeddings, and function calling.
+
+<Note>
+**Also works with Azure OpenAI**: This instrumentation is compatible with Azure OpenAI endpoints.
+</Note>
+
+## Installation
+
+<CodeGroup>
+```bash Python
+pip install openinference-instrumentation-openai openai
+```
+
+```bash TypeScript
+npm install @arizeai/openinference-instrumentation-openai openai
+```
+</CodeGroup>
+
+## Setup
+
+<Steps>
+  <Step title="Set your OpenAI API key">
+    <CodeGroup>
+    ```bash Python
+    export OPENAI_API_KEY=sk-...
+    ```
+    
+    ```bash TypeScript
+    export OPENAI_API_KEY=sk-...
+    ```
+    </CodeGroup>
+  </Step>
+  
+  <Step title="Register Phoenix tracer">
+    <CodeGroup>
+    ```python Python
+    from phoenix.otel import register
+    
+    # Configure the Phoenix tracer
+    tracer_provider = register(
+      project_name="my-llm-app",  # Default is 'default'
+      auto_instrument=True  # Auto-instrument based on installed packages
+    )
+    ```
+    
+    ```typescript TypeScript
+    import { register } from "@arizeai/phoenix-otel";
+    import { OpenAIInstrumentation } from "@arizeai/openinference-instrumentation-openai";
+    
+    const tracerProvider = register({
+      projectName: "my-llm-app",
+    });
+    
+    // Instrument OpenAI
+    const instrumentation = new OpenAIInstrumentation();
+    instrumentation.manuallyInstrument(tracerProvider);
+    ```
+    </CodeGroup>
+  </Step>
+  
+  <Step title="Use OpenAI as normal">
+    <CodeGroup>
+    ```python Python
+    import openai
+    
+    client = openai.OpenAI()
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Write a haiku about observability."}],
+    )
+    print(response.choices[0].message.content)
+    ```
+    
+    ```typescript TypeScript
+    import OpenAI from "openai";
+    
+    const client = new OpenAI();
+    const response = await client.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{role: "user", content: "Write a haiku about observability."}],
+    });
+    console.log(response.choices[0].message.content);
+    ```
+    </CodeGroup>
+  </Step>
+</Steps>
+
+## What Gets Traced
+
+The OpenAI instrumentation automatically captures:
+
+- **Chat Completions**: Model, messages, temperature, tokens, latency
+- **Embeddings**: Model, input text, embedding dimensions
+- **Function Calling**: Tool definitions, function calls, responses
+- **Streaming**: Token-by-token streaming completions
+- **Errors**: Rate limits, API errors, exceptions
+
+## Advanced Examples
+
+### Function Calling
+
+<CodeGroup>
+```python Python
+import openai
+import json
+
+client = openai.OpenAI()
+
+# Define tools
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get the current weather for a location",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {"type": "string", "description": "City name"},
+                    "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}
+                },
+                "required": ["location"]
+            }
+        }
+    }
+]
+
+response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "What's the weather in San Francisco?"}],
+    tools=tools,
+    tool_choice="auto"
+)
+
+# Phoenix captures the tool definition, selection, and execution
+print(response.choices[0].message.tool_calls)
+```
+
+```typescript TypeScript
+import OpenAI from "openai";
+
+const client = new OpenAI();
+
+const tools = [
+  {
+    type: "function",
+    function: {
+      name: "get_weather",
+      description: "Get the current weather for a location",
+      parameters: {
+        type: "object",
+        properties: {
+          location: {type: "string", description: "City name"},
+          unit: {type: "string", enum: ["celsius", "fahrenheit"]}
+        },
+        required: ["location"]
+      }
+    }
+  }
+];
+
+const response = await client.chat.completions.create({
+  model: "gpt-4o",
+  messages: [{role: "user", content: "What's the weather in San Francisco?"}],
+  tools: tools,
+  tool_choice: "auto"
+});
+
+console.log(response.choices[0].message.tool_calls);
+```
+</CodeGroup>
+
+### Streaming Completions
+
+<CodeGroup>
+```python Python
+import openai
+
+client = openai.OpenAI()
+
+stream = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Count to 10."}],
+    stream=True,
+)
+
+for chunk in stream:
+    if chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="")
+
+# Phoenix captures the full streamed response
+```
+
+```typescript TypeScript
+import OpenAI from "openai";
+
+const client = new OpenAI();
+
+const stream = await client.chat.completions.create({
+  model: "gpt-4o",
+  messages: [{role: "user", content: "Count to 10."}],
+  stream: true,
+});
+
+for await (const chunk of stream) {
+  const content = chunk.choices[0]?.delta?.content;
+  if (content) {
+    process.stdout.write(content);
+  }
+}
+```
+</CodeGroup>
+
+### Embeddings
+
+<CodeGroup>
+```python Python
+import openai
+
+client = openai.OpenAI()
+
+response = client.embeddings.create(
+    model="text-embedding-3-small",
+    input="Phoenix makes observability easy",
+)
+
+print(f"Embedding dimension: {len(response.data[0].embedding)}")
+```
+
+```typescript TypeScript
+import OpenAI from "openai";
+
+const client = new OpenAI();
+
+const response = await client.embeddings.create({
+  model: "text-embedding-3-small",
+  input: "Phoenix makes observability easy",
+});
+
+console.log(`Embedding dimension: ${response.data[0].embedding.length}`);
+```
+</CodeGroup>
+
+## Observability in Phoenix
+
+Once instrumented, you can:
+
+- **View all OpenAI calls** in the Phoenix traces tab
+- **Monitor token usage** and costs per request
+- **Track latency** for each completion
+- **Inspect prompts and responses** for debugging
+- **Analyze function calling** patterns and tool usage
+- **Debug errors** like rate limits and timeouts
+
+## Resources
+
+<CardGroup cols={2}>
+  <Card title="Example Notebook" icon="book" href="https://github.com/Arize-ai/phoenix/blob/main/tutorials/tracing/openai_tracing_tutorial.ipynb">
+    Complete Python tutorial
+  </Card>
+  <Card title="OpenInference Package" icon="github" href="https://github.com/Arize-ai/openinference/tree/main/python/instrumentation/openinference-instrumentation-openai">
+    View source code
+  </Card>
+  <Card title="Working Examples" icon="code" href="https://github.com/Arize-ai/openinference/tree/main/python/instrumentation/openinference-instrumentation-openai/examples">
+    More code examples
+  </Card>
+  <Card title="OpenAI Agents SDK" icon="robot" href="https://arize.com/docs/phoenix/tracing/integrations-tracing/openai-agents-sdk">
+    Instrument OpenAI Agents
+  </Card>
+</CardGroup>

@@ -1,0 +1,540 @@
+---
+title: Security Configuration
+description: Configure authentication, encryption, and network security for Phoenix
+---
+
+Secure your Phoenix deployment with authentication methods, encryption, and network controls.
+
+## Authentication Methods
+
+Phoenix supports multiple authentication methods:
+
+- **Basic Authentication**: Username and password (local users)
+- **LDAP/Active Directory**: Corporate directory integration
+- **OAuth2/OIDC**: Single Sign-On with identity providers
+- **API Keys**: Programmatic access for applications
+
+### Enabling Authentication
+
+Enable authentication and set the secret key:
+
+```bash
+PHOENIX_ENABLE_AUTH=true
+PHOENIX_SECRET=$(openssl rand -base64 32)
+PHOENIX_DEFAULT_ADMIN_INITIAL_PASSWORD=changeme
+```
+
+<Warning>
+  Change the default admin password immediately after first login.
+</Warning>
+
+### Secret Key Requirements
+
+The `PHOENIX_SECRET` must be:
+- At least 32 characters long
+- Include at least one digit and one lowercase letter
+- Kept confidential (never commit to version control)
+
+Generate a secure secret:
+
+```bash
+# Using OpenSSL
+openssl rand -base64 32
+
+# Using Python
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+## LDAP Authentication
+
+Integrate Phoenix with your corporate LDAP or Active Directory.
+
+### Basic LDAP Configuration
+
+```bash
+# LDAP Server
+PHOENIX_LDAP_HOST=ldap.company.com
+PHOENIX_LDAP_PORT=389
+PHOENIX_LDAP_TLS_MODE=starttls
+PHOENIX_LDAP_TLS_VERIFY=true
+
+# Service Account
+PHOENIX_LDAP_BIND_DN="CN=svc-phoenix,OU=Service Accounts,DC=company,DC=com"
+PHOENIX_LDAP_BIND_PASSWORD=${LDAP_BIND_PASSWORD}
+
+# User Search
+PHOENIX_LDAP_USER_SEARCH_BASE_DNS="OU=Users,DC=company,DC=com"
+PHOENIX_LDAP_USER_SEARCH_FILTER="(&(objectClass=user)(sAMAccountName=%s))"
+
+# Attributes
+PHOENIX_LDAP_ATTR_EMAIL=mail
+PHOENIX_LDAP_ATTR_DISPLAY_NAME=displayName
+PHOENIX_LDAP_ATTR_MEMBER_OF=memberOf
+
+# Role Mapping
+PHOENIX_LDAP_GROUP_ROLE_MAPPINGS='[
+  {"group_dn": "CN=Phoenix Admins,OU=Groups,DC=company,DC=com", "role": "ADMIN"},
+  {"group_dn": "CN=Phoenix Users,OU=Groups,DC=company,DC=com", "role": "MEMBER"}
+]'
+
+PHOENIX_LDAP_ALLOW_SIGN_UP=true
+```
+
+### TLS Modes
+
+<ParamField path="PHOENIX_LDAP_TLS_MODE" type="string" default="starttls">
+  LDAP TLS connection mode:
+  
+  - **starttls**: Upgrade from plaintext to TLS on port 389 (recommended)
+  - **ldaps**: TLS from connection start on port 636
+  - **none**: No encryption (testing only, credentials sent in plaintext)
+</ParamField>
+
+### Active Directory Configuration
+
+```bash
+PHOENIX_LDAP_HOST=dc1.company.com,dc2.company.com  # Failover DCs
+PHOENIX_LDAP_PORT=389
+PHOENIX_LDAP_TLS_MODE=starttls
+PHOENIX_LDAP_BIND_DN="CN=Phoenix Service,OU=Service Accounts,DC=company,DC=com"
+PHOENIX_LDAP_BIND_PASSWORD=${LDAP_PASSWORD}
+
+# AD User Search
+PHOENIX_LDAP_USER_SEARCH_BASE_DNS="OU=Employees,DC=company,DC=com;OU=Contractors,DC=company,DC=com"
+PHOENIX_LDAP_USER_SEARCH_FILTER="(&(objectClass=user)(sAMAccountName=%s))"
+
+# AD Attributes
+PHOENIX_LDAP_ATTR_EMAIL=mail
+PHOENIX_LDAP_ATTR_DISPLAY_NAME=displayName
+PHOENIX_LDAP_ATTR_MEMBER_OF=memberOf
+PHOENIX_LDAP_ATTR_UNIQUE_ID=objectGUID
+```
+
+### OpenLDAP Configuration (POSIX Groups)
+
+```bash
+PHOENIX_LDAP_HOST=ldap.company.com
+PHOENIX_LDAP_PORT=389
+PHOENIX_LDAP_TLS_MODE=starttls
+
+# OpenLDAP Service Account
+PHOENIX_LDAP_BIND_DN="cn=phoenix,ou=services,dc=company,dc=com"
+PHOENIX_LDAP_BIND_PASSWORD=${LDAP_PASSWORD}
+
+# User Search
+PHOENIX_LDAP_USER_SEARCH_BASE_DNS="ou=people,dc=company,dc=com"
+PHOENIX_LDAP_USER_SEARCH_FILTER="(&(objectClass=inetOrgPerson)(uid=%s))"
+
+# OpenLDAP Attributes
+PHOENIX_LDAP_ATTR_EMAIL=mail
+PHOENIX_LDAP_ATTR_DISPLAY_NAME=cn
+PHOENIX_LDAP_ATTR_UNIQUE_ID=entryUUID
+
+# POSIX Group Search
+PHOENIX_LDAP_GROUP_SEARCH_BASE_DNS="ou=groups,dc=company,dc=com"
+PHOENIX_LDAP_GROUP_SEARCH_FILTER="(&(objectClass=posixGroup)(memberUid=%s))"
+```
+
+### Advanced LDAP Settings
+
+<ParamField path="PHOENIX_LDAP_TLS_CA_CERT_FILE" type="string">
+  Path to custom CA certificate (PEM format) for private/internal CAs
+</ParamField>
+
+<ParamField path="PHOENIX_LDAP_TLS_CLIENT_CERT_FILE" type="string">
+  Path to client certificate for mutual TLS authentication
+</ParamField>
+
+<ParamField path="PHOENIX_LDAP_TLS_CLIENT_KEY_FILE" type="string">
+  Path to client private key for mutual TLS
+</ParamField>
+
+## OAuth2/OIDC
+
+Integrate with OAuth2 identity providers for Single Sign-On.
+
+### Google OAuth2
+
+```bash
+PHOENIX_OAUTH2_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+PHOENIX_OAUTH2_GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+PHOENIX_OAUTH2_GOOGLE_OIDC_CONFIG_URL=https://accounts.google.com/.well-known/openid-configuration
+PHOENIX_OAUTH2_GOOGLE_DISPLAY_NAME=Google
+PHOENIX_OAUTH2_GOOGLE_ALLOW_SIGN_UP=true
+PHOENIX_OAUTH2_GOOGLE_AUTO_LOGIN=false
+```
+
+### Microsoft Entra ID (Azure AD)
+
+```bash
+PHOENIX_OAUTH2_MICROSOFT_CLIENT_ID=your-application-id
+PHOENIX_OAUTH2_MICROSOFT_CLIENT_SECRET=${MICROSOFT_CLIENT_SECRET}
+PHOENIX_OAUTH2_MICROSOFT_OIDC_CONFIG_URL=https://login.microsoftonline.com/{tenant-id}/v2.0/.well-known/openid-configuration
+PHOENIX_OAUTH2_MICROSOFT_DISPLAY_NAME=Microsoft Entra ID
+PHOENIX_OAUTH2_MICROSOFT_SCOPES="offline_access User.Read"
+PHOENIX_OAUTH2_MICROSOFT_EMAIL_ATTRIBUTE_PATH=preferred_username
+```
+
+### AWS Cognito
+
+```bash
+PHOENIX_OAUTH2_COGNITO_CLIENT_ID=your-cognito-client-id
+PHOENIX_OAUTH2_COGNITO_CLIENT_SECRET=${COGNITO_CLIENT_SECRET}
+PHOENIX_OAUTH2_COGNITO_OIDC_CONFIG_URL=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_xxxxx/.well-known/openid-configuration
+PHOENIX_OAUTH2_COGNITO_DISPLAY_NAME=AWS Cognito
+PHOENIX_OAUTH2_COGNITO_GROUPS_ATTRIBUTE_PATH="cognito:groups"
+PHOENIX_OAUTH2_COGNITO_ALLOWED_GROUPS="Admins,PowerUsers"
+```
+
+### Keycloak
+
+```bash
+PHOENIX_OAUTH2_KEYCLOAK_CLIENT_ID=phoenix
+PHOENIX_OAUTH2_KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET}
+PHOENIX_OAUTH2_KEYCLOAK_OIDC_CONFIG_URL=https://keycloak.company.com/realms/company/.well-known/openid-configuration
+PHOENIX_OAUTH2_KEYCLOAK_DISPLAY_NAME=Keycloak
+PHOENIX_OAUTH2_KEYCLOAK_GROUPS_ATTRIBUTE_PATH="resource_access.phoenix.roles"
+PHOENIX_OAUTH2_KEYCLOAK_ROLE_ATTRIBUTE_PATH="resource_access.phoenix.role"
+PHOENIX_OAUTH2_KEYCLOAK_ROLE_MAPPING="admin:ADMIN,user:MEMBER"
+```
+
+### OAuth2 Advanced Settings
+
+<ParamField path="PHOENIX_OAUTH2_{PROVIDER}_USE_PKCE" type="boolean" default="false">
+  Enable PKCE (Proof Key for Code Exchange) for enhanced security (RFC 7636)
+</ParamField>
+
+<ParamField path="PHOENIX_OAUTH2_{PROVIDER}_TOKEN_ENDPOINT_AUTH_METHOD" type="string">
+  Token endpoint authentication method:
+  - `client_secret_basic`: Default (credentials in Authorization header)
+  - `client_secret_post`: Credentials in POST body
+  - `none`: No authentication (public clients)
+</ParamField>
+
+<ParamField path="PHOENIX_OAUTH2_{PROVIDER}_GROUPS_ATTRIBUTE_PATH" type="string">
+  JMESPath expression to extract groups from ID token
+</ParamField>
+
+<ParamField path="PHOENIX_OAUTH2_{PROVIDER}_ALLOWED_GROUPS" type="string">
+  Comma-separated list of groups allowed to sign in
+</ParamField>
+
+## API Keys
+
+API keys provide programmatic access to Phoenix for applications and scripts.
+
+### Creating API Keys
+
+1. Log in to Phoenix as an admin
+2. Navigate to Settings > API Keys
+3. Click "Create API Key"
+4. Set a name and select permissions
+5. Copy the key (shown only once)
+
+### Using API Keys
+
+Include the API key in the `Authorization` header:
+
+```bash
+curl -H "Authorization: Bearer YOUR_API_KEY" \
+  https://phoenix.example.com/api/v1/projects
+```
+
+With Phoenix Python SDK:
+
+```python
+import phoenix as px
+
+px.Client(
+    endpoint="https://phoenix.example.com",
+    api_key="YOUR_API_KEY"
+)
+```
+
+### API Key Types
+
+- **User API Keys**: Associated with a specific user, inherits user permissions
+- **System API Keys**: Service accounts with specific role assignments
+
+See [API Key Management](/deployment/api-keys) for details.
+
+## Encryption
+
+Phoenix encrypts sensitive data at rest using Fernet (AES-128-CBC + HMAC-SHA256).
+
+### Encryption Key Derivation
+
+Encryption keys are derived from `PHOENIX_SECRET` using PBKDF2-HMAC-SHA256:
+
+- **Iterations**: 600,000 (OWASP 2022 recommendation)
+- **Salt**: Fixed domain-separation salt
+- **Key Length**: 32 bytes (Fernet requirement)
+
+```bash
+PHOENIX_SECRET=$(openssl rand -base64 32)
+```
+
+### What is Encrypted
+
+Phoenix encrypts:
+- OAuth2 client secrets
+- SMTP passwords
+- API keys
+- User credentials
+- Secret configuration values
+
+### Threat Model
+
+**Protects Against**:
+- Database backups/dumps falling into unauthorized hands
+- SQL injection attacks reading encrypted columns
+
+**Does NOT Protect Against**:
+- Compromise of both database and `PHOENIX_SECRET`
+- Runtime memory access (keys are decrypted in memory)
+
+<Warning>
+  **Key Rotation**: Changing `PHOENIX_SECRET` requires manual re-encryption of all encrypted data. Plan key rotation carefully.
+</Warning>
+
+## TLS/SSL
+
+Enable TLS for encrypted communication.
+
+### HTTP TLS
+
+```bash
+PHOENIX_TLS_ENABLED_FOR_HTTP=true
+PHOENIX_TLS_CERT_FILE=/etc/phoenix/tls/cert.pem
+PHOENIX_TLS_KEY_FILE=/etc/phoenix/tls/key.pem
+PHOENIX_TLS_KEY_FILE_PASSWORD=${KEY_PASSWORD}  # Optional
+```
+
+### gRPC TLS
+
+```bash
+PHOENIX_TLS_ENABLED_FOR_GRPC=true
+PHOENIX_TLS_CERT_FILE=/etc/phoenix/tls/cert.pem
+PHOENIX_TLS_KEY_FILE=/etc/phoenix/tls/key.pem
+```
+
+### Mutual TLS (mTLS)
+
+Require client certificates:
+
+```bash
+PHOENIX_TLS_ENABLED_FOR_HTTP=true
+PHOENIX_TLS_CERT_FILE=/etc/phoenix/tls/server-cert.pem
+PHOENIX_TLS_KEY_FILE=/etc/phoenix/tls/server-key.pem
+PHOENIX_TLS_CA_FILE=/etc/phoenix/tls/ca-cert.pem
+PHOENIX_TLS_VERIFY_CLIENT=true
+```
+
+### Generating Self-Signed Certificates
+
+For development and testing:
+
+```bash
+# Generate private key
+openssl genrsa -out key.pem 2048
+
+# Generate self-signed certificate
+openssl req -new -x509 -key key.pem -out cert.pem -days 365 \
+  -subj "/CN=phoenix.local"
+```
+
+<Warning>
+  Use certificates from a trusted CA (Let's Encrypt, corporate CA) for production.
+</Warning>
+
+## Network Security
+
+### CORS Configuration
+
+Restrict cross-origin requests:
+
+```bash
+PHOENIX_ALLOWED_ORIGINS=https://app.example.com,https://dashboard.example.com
+```
+
+### CSRF Protection
+
+Configure trusted origins for CSRF tokens:
+
+```bash
+PHOENIX_CSRF_TRUSTED_ORIGINS=https://phoenix.example.com
+```
+
+### Rate Limiting
+
+Phoenix includes built-in rate limiting for authentication endpoints:
+
+- **Login**: 5 requests per minute per IP
+- **Password Reset**: 3 requests per hour per IP
+- **API**: Configurable per endpoint
+
+Disable rate limiting (not recommended):
+
+```bash
+PHOENIX_DISABLE_RATE_LIMIT=true
+```
+
+### Firewall Rules
+
+Restrict access to Phoenix ports:
+
+```bash
+# Allow only internal network
+iptables -A INPUT -p tcp --dport 6006 -s 10.0.0.0/8 -j ACCEPT
+iptables -A INPUT -p tcp --dport 6006 -j DROP
+
+# Allow gRPC from application servers
+iptables -A INPUT -p tcp --dport 4317 -s 10.0.1.0/24 -j ACCEPT
+```
+
+## Security Best Practices
+
+<Steps>
+  <Step title="Use strong secrets">
+    Generate secrets with at least 32 characters of entropy:
+    ```bash
+    PHOENIX_SECRET=$(openssl rand -base64 32)
+    PHOENIX_ADMIN_SECRET=$(openssl rand -base64 32)
+    ```
+  </Step>
+  
+  <Step title="Enable authentication">
+    Always enable authentication in production:
+    ```bash
+    PHOENIX_ENABLE_AUTH=true
+    ```
+  </Step>
+  
+  <Step title="Use secure cookies">
+    Enable secure cookies when using HTTPS:
+    ```bash
+    PHOENIX_USE_SECURE_COOKIES=true
+    ```
+  </Step>
+  
+  <Step title="Configure TLS">
+    Enable TLS for all communications:
+    ```bash
+    PHOENIX_TLS_ENABLED_FOR_HTTP=true
+    PHOENIX_TLS_ENABLED_FOR_GRPC=true
+    ```
+  </Step>
+  
+  <Step title="Restrict CORS">
+    Limit allowed origins to known domains:
+    ```bash
+    PHOENIX_ALLOWED_ORIGINS=https://trusted-app.com
+    ```
+  </Step>
+  
+  <Step title="Use managed PostgreSQL">
+    Leverage cloud provider security features:
+    - AWS RDS with IAM authentication
+    - Encryption at rest
+    - Automated backups
+    - Network isolation (VPC)
+  </Step>
+  
+  <Step title="Rotate credentials regularly">
+    Implement a rotation schedule for:
+    - Database passwords
+    - API keys
+    - LDAP service account passwords
+    - OAuth2 client secrets
+  </Step>
+</Steps>
+
+## Compliance and Auditing
+
+### Audit Logs
+
+Phoenix logs authentication events:
+
+```bash
+PHOENIX_LOGGING_MODE=structured
+PHOENIX_LOGGING_LEVEL=info
+```
+
+Audit log entries include:
+- User login/logout
+- Failed authentication attempts
+- API key creation/deletion
+- Permission changes
+
+### GDPR Compliance
+
+For GDPR compliance:
+
+1. **Data Retention**: Configure automatic cleanup
+   ```bash
+   PHOENIX_DEFAULT_RETENTION_POLICY_DAYS=90
+   ```
+
+2. **User Deletion**: Admin API for user data deletion
+
+3. **Data Export**: Users can export their traces and annotations
+
+### SOC 2 Considerations
+
+- Enable encryption at rest and in transit
+- Configure audit logging
+- Implement access controls (RBAC)
+- Use managed PostgreSQL with backups
+- Enable monitoring and alerting
+
+## Troubleshooting
+
+### Authentication Not Working
+
+Check authentication configuration:
+
+```bash
+# Verify secret is set
+echo $PHOENIX_SECRET | wc -c  # Should be >= 32
+
+# Check logs
+docker logs phoenix | grep -i auth
+```
+
+### LDAP Connection Failures
+
+Test LDAP connectivity:
+
+```bash
+# Test LDAP connection
+ldapsearch -H ldap://ldap.company.com:389 -x \
+  -D "CN=svc-phoenix,OU=Service Accounts,DC=company,DC=com" \
+  -w password -b "OU=Users,DC=company,DC=com" "(sAMAccountName=testuser)"
+```
+
+### TLS Certificate Issues
+
+Verify certificate validity:
+
+```bash
+# Check certificate expiration
+openssl x509 -in cert.pem -noout -dates
+
+# Verify certificate and key match
+openssl x509 -in cert.pem -noout -modulus | openssl md5
+openssl rsa -in key.pem -noout -modulus | openssl md5
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="API Keys" icon="key" href="/deployment/api-keys">
+    Manage API keys for programmatic access
+  </Card>
+  <Card title="Configuration" icon="gear" href="/deployment/configuration">
+    View all configuration options
+  </Card>
+  <Card title="Phoenix Cloud" icon="cloud" href="/deployment/phoenix-cloud">
+    Managed Phoenix with enterprise security
+  </Card>
+</CardGroup>

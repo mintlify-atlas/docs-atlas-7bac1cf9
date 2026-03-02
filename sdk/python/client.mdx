@@ -1,0 +1,354 @@
+---
+title: Python Client Reference
+description: Complete reference for the Phoenix Python client library
+---
+
+The `arize-phoenix-client` package provides a programmatic interface to Phoenix for managing projects, traces, datasets, experiments, and more.
+
+## Installation
+
+```bash
+pip install arize-phoenix-client
+```
+
+## Client Class
+
+The main entry point for interacting with Phoenix.
+
+### Initialization
+
+```python
+from phoenix.client import Client
+
+client = Client(
+    base_url="http://localhost:6006",
+    api_key="your-api-key",  # Optional
+    headers={"Custom-Header": "value"}  # Optional
+)
+```
+
+<ParamField path="base_url" type="str | httpx.URL">
+  The base URL for the Phoenix API endpoint. If not provided, it will be read from `PHOENIX_COLLECTOR_ENDPOINT` environment variable or fall back to `http://localhost:6006`.
+</ParamField>
+
+<ParamField path="api_key" type="str">
+  The API key for authentication. If provided, it will be included in the Authorization header as a bearer token.
+</ParamField>
+
+<ParamField path="headers" type="Mapping[str, str]">
+  Additional headers to include in HTTP requests. Won't override environment variable headers.
+</ParamField>
+
+<ParamField path="http_client" type="httpx.Client">
+  An instance of `httpx.Client` to use for making HTTP requests. If not provided, a new instance will be created.
+</ParamField>
+
+### AsyncClient
+
+For async operations, use `AsyncClient` with the same parameters:
+
+```python
+from phoenix.client import AsyncClient
+
+client = AsyncClient(
+    base_url="http://localhost:6006",
+    api_key="your-api-key"
+)
+```
+
+## Resources
+
+The client provides access to various resources through properties:
+
+### Projects
+
+Manage Phoenix projects.
+
+```python
+# List all projects
+projects = client.projects.list()
+
+# Get a specific project by name
+project = client.projects.get("my-project")
+
+# Create a new project
+new_project = client.projects.create(name="new-project")
+```
+
+### Traces
+
+Query and manage traces.
+
+```python
+# List traces for a project
+traces = client.traces.list(project_id="project-id")
+
+# Iterate through traces
+for trace in client.traces.list(project_id="project-id"):
+    print(trace.id, trace.start_time)
+```
+
+### Spans
+
+Work with individual spans and annotations.
+
+```python
+# Get spans
+spans = client.spans.get(span_id="span-id")
+
+# Add annotations to spans
+client.spans.add_annotation(
+    span_id="span-id",
+    name="correctness",
+    label="correct",
+    score=1.0,
+    explanation="The response is accurate"
+)
+
+# Add notes to spans
+client.spans.add_note(
+    span_id="span-id",
+    note="Interesting edge case"
+)
+
+# Delete a span
+client.spans.delete(span_id="span-id")
+```
+
+### Sessions
+
+Manage sessions (grouped traces).
+
+```python
+# Add session-level annotations
+client.sessions.add_annotation(
+    session_id="session-id",
+    name="user_satisfaction",
+    label="satisfied",
+    score=0.9
+)
+```
+
+### Datasets
+
+Create and manage datasets for evaluations.
+
+```python
+# Create a dataset
+dataset = client.datasets.create(
+    name="qa-examples",
+    description="Question answering test cases"
+)
+
+# Add examples to dataset
+client.datasets.add_examples(
+    dataset_id=dataset.id,
+    examples=[
+        {
+            "input": {"question": "What is the capital of France?"},
+            "output": {"answer": "Paris"},
+            "metadata": {"difficulty": "easy"}
+        }
+    ]
+)
+
+# Get a dataset
+dataset = client.datasets.get(dataset_id="dataset-id")
+
+# Create dataset from spans
+dataset = client.datasets.create_from_spans(
+    name="production-examples",
+    span_ids=["span-1", "span-2", "span-3"]
+)
+```
+
+### Experiments
+
+Run and manage experiments on datasets.
+
+```python
+# Create an experiment
+experiment = client.experiments.create(
+    dataset_id="dataset-id",
+    name="gpt-4-baseline",
+    metadata={"model": "gpt-4", "temperature": 0.7}
+)
+
+# Run an experiment
+from phoenix.client.experiments import run_experiment
+
+def task_fn(example):
+    # Your LLM task logic
+    return {"output": "response"}
+
+results = run_experiment(
+    client=client,
+    experiment_id=experiment.id,
+    task=task_fn
+)
+
+# List experiments
+experiments = client.experiments.list(dataset_id="dataset-id")
+
+# Get experiment runs
+runs = client.experiments.get_runs(experiment_id="experiment-id")
+
+# Delete an experiment
+client.experiments.delete(experiment_id="experiment-id")
+```
+
+### Prompts
+
+Manage prompt templates and versions.
+
+```python
+# Create a prompt template
+prompt = client.prompts.create(
+    name="qa-prompt",
+    template="Answer the question: {question}",
+    variables=["question"]
+)
+
+# Create a new version
+new_version = client.prompts.create_version(
+    prompt_id=prompt.id,
+    template="Answer the following question concisely: {question}",
+    variables=["question"]
+)
+
+# Get a prompt
+prompt = client.prompts.get(prompt_id="prompt-id")
+
+# List all prompts
+prompts = client.prompts.list()
+
+# Delete a prompt
+client.prompts.delete(prompt_id="prompt-id")
+```
+
+## Advanced Usage
+
+### Custom HTTP Client
+
+For advanced configurations, pass a custom `httpx.Client`:
+
+```python
+import httpx
+from phoenix.client import Client
+
+http_client = httpx.Client(
+    base_url="http://localhost:6006",
+    timeout=60.0,
+    headers={"Authorization": "Bearer my-token"},
+    verify=False  # For self-signed certificates
+)
+
+client = Client(http_client=http_client)
+```
+
+### Error Handling
+
+```python
+from phoenix.client.exceptions import PhoenixException
+
+try:
+    project = client.projects.get("non-existent")
+except PhoenixException as e:
+    print(f"Error: {e}")
+```
+
+### Async Operations
+
+```python
+import asyncio
+from phoenix.client import AsyncClient
+
+async def main():
+    client = AsyncClient()
+    
+    # All methods are async
+    projects = await client.projects.list()
+    
+    # Use async iteration
+    async for trace in client.traces.list(project_id="project-id"):
+        print(trace.id)
+
+asyncio.run(main())
+```
+
+## Examples
+
+### Create Dataset from Production Traces
+
+```python
+from phoenix.client import Client
+
+client = Client()
+
+# Get recent traces from production
+project = client.projects.get("production")
+traces = list(client.traces.list(project_id=project.id, limit=100))
+
+# Filter for high-quality examples
+span_ids = []
+for trace in traces:
+    for span in trace.spans:
+        if span.attributes.get("user_rating") >= 4:
+            span_ids.append(span.id)
+
+# Create dataset
+dataset = client.datasets.create_from_spans(
+    name="high-quality-examples",
+    span_ids=span_ids
+)
+```
+
+### Batch Annotate Spans
+
+```python
+from phoenix.client import Client
+
+client = Client()
+
+# Get spans to annotate
+spans = list(client.spans.get(project_id="project-id"))
+
+# Batch annotate
+for span in spans:
+    if span.attributes.get("status") == "error":
+        client.spans.add_annotation(
+            span_id=span.id,
+            name="needs_review",
+            label="true",
+            score=1.0
+        )
+```
+
+### Monitor Experiment Results
+
+```python
+from phoenix.client import Client
+import time
+
+client = Client()
+experiment_id = "experiment-id"
+
+while True:
+    runs = client.experiments.get_runs(experiment_id=experiment_id)
+    completed = sum(1 for r in runs if r.status == "completed")
+    total = len(runs)
+    
+    print(f"Progress: {completed}/{total}")
+    
+    if completed == total:
+        break
+    
+    time.sleep(5)
+```
+
+## See Also
+
+- [Python OTEL Reference](/sdk/python/otel) - Set up tracing
+- [Python Evals Reference](/sdk/python/evals) - Run evaluations
+- [Experiments Guide](/datasets/experiments) - Learn about experiments
+- [Datasets Guide](/datasets/overview) - Learn about datasets

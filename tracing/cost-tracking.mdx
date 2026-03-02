@@ -1,0 +1,476 @@
+---
+title: Cost Tracking
+description: Monitor and analyze LLM costs across providers
+---
+
+Phoenix automatically tracks token usage and calculates costs for LLM calls, helping you understand and optimize your AI application expenses.
+
+## How Cost Tracking Works
+
+Cost tracking in Phoenix is based on:
+
+1. **Token Counts**: Captured from LLM provider responses
+2. **Model Pricing**: Built-in pricing tables for major providers
+3. **Automatic Calculation**: Costs computed automatically per span
+
+## Token Count Attributes
+
+Phoenix captures token usage using OpenInference semantic conventions:
+
+```python
+# These attributes are captured automatically
+attributes = {
+    "llm.token_count.prompt": 150,      # Input tokens
+    "llm.token_count.completion": 50,   # Output tokens  
+    "llm.token_count.total": 200        # Total tokens
+}
+```
+
+## Viewing Costs in Phoenix UI
+
+The Phoenix UI displays cost information:
+
+### Trace View
+- Total cost per trace
+- Cost breakdown by span
+- Token usage per span
+- Cost timeline visualization
+
+### Analytics Dashboard
+- Total costs over time
+- Cost by model
+- Cost by project
+- Cost trends and anomalies
+
+### Span Details
+- Input/output token counts
+- Calculated cost per span
+- Pricing model used
+
+## Token Counting in Code
+
+### Automatic Token Counting
+
+With auto-instrumentation, token counts are captured automatically:
+
+```python
+from phoenix.otel import register
+from openai import OpenAI
+
+# Setup instrumentation
+register(project_name="my-app", auto_instrument=True)
+
+client = OpenAI()
+
+# Token counts captured automatically
+response = client.chat.completions.create(
+    model="gpt-4",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+
+# Phoenix automatically captures:
+# - llm.token_count.prompt
+# - llm.token_count.completion
+# - llm.token_count.total
+```
+
+### Manual Token Counting
+
+For custom implementations, add token counts manually:
+
+```python
+from opentelemetry import trace
+from openinference.semconv.trace import SpanAttributes
+
+tracer = trace.get_tracer(__name__)
+
+with tracer.start_as_current_span("llm-call") as span:
+    span.set_attribute(SpanAttributes.OPENINFERENCE_SPAN_KIND, "LLM")
+    span.set_attribute(SpanAttributes.LLM_MODEL_NAME, "gpt-4")
+    
+    # Call your LLM
+    response = custom_llm_call()
+    
+    # Set token counts
+    span.set_attribute(
+        SpanAttributes.LLM_TOKEN_COUNT_PROMPT,
+        response.usage.prompt_tokens
+    )
+    span.set_attribute(
+        SpanAttributes.LLM_TOKEN_COUNT_COMPLETION,
+        response.usage.completion_tokens
+    )
+    span.set_attribute(
+        SpanAttributes.LLM_TOKEN_COUNT_TOTAL,
+        response.usage.total_tokens
+    )
+```
+
+## Cost Calculation
+
+Phoenix calculates costs based on:
+
+<Tabs>
+  <Tab title="OpenAI">
+    ```python
+    # GPT-4 pricing (example)
+    cost = (
+        (prompt_tokens / 1000) * $0.03 +      # Input cost
+        (completion_tokens / 1000) * $0.06     # Output cost
+    )
+    ```
+    
+    Phoenix includes pricing for:
+    - GPT-4, GPT-4 Turbo, GPT-4o
+    - GPT-3.5 Turbo
+    - Embedding models (text-embedding-ada-002, etc.)
+  </Tab>
+
+  <Tab title="Anthropic">
+    ```python
+    # Claude pricing (example)
+    cost = (
+        (prompt_tokens / 1000) * $0.008 +      # Input cost
+        (completion_tokens / 1000) * $0.024    # Output cost
+    )
+    ```
+    
+    Phoenix includes pricing for:
+    - Claude 3 (Opus, Sonnet, Haiku)
+    - Claude 2.1, 2.0
+  </Tab>
+
+  <Tab title="Other Providers">
+    Phoenix supports cost tracking for:
+    - Azure OpenAI
+    - Google Vertex AI (Gemini, PaLM)
+    - Cohere
+    - Bedrock (Claude, Titan, etc.)
+    - Mistral AI
+  </Tab>
+</Tabs>
+
+<Note>
+  Pricing data is built into Phoenix and updated regularly. Actual costs may vary based on your specific pricing agreements with providers.
+</Note>
+
+## Cost Analytics with Phoenix Client
+
+Analyze costs programmatically:
+
+### Total Cost by Project
+
+```python
+import phoenix as px
+import pandas as pd
+
+client = px.Client(endpoint="http://localhost:6006")
+
+# Get all spans
+spans_df = client.get_spans(
+    project_name="my-app",
+    limit=10000
+)
+
+# Calculate total tokens
+total_prompt_tokens = spans_df['attributes.llm.token_count.prompt'].sum()
+total_completion_tokens = spans_df['attributes.llm.token_count.completion'].sum()
+total_tokens = spans_df['attributes.llm.token_count.total'].sum()
+
+print(f"Total Tokens:")
+print(f"  Prompt: {total_prompt_tokens:,}")
+print(f"  Completion: {total_completion_tokens:,}")
+print(f"  Total: {total_tokens:,}")
+```
+
+### Cost Over Time
+
+```python
+import phoenix as px
+import pandas as pd
+import matplotlib.pyplot as plt
+
+client = px.Client()
+spans_df = client.get_spans(project_name="my-app", limit=10000)
+
+# Group by day
+spans_df['date'] = pd.to_datetime(spans_df['start_time']).dt.date
+daily_tokens = spans_df.groupby('date').agg({
+    'attributes.llm.token_count.total': 'sum'
+}).reset_index()
+
+# Plot
+plt.figure(figsize=(12, 6))
+plt.plot(daily_tokens['date'], daily_tokens['attributes.llm.token_count.total'])
+plt.title('Token Usage Over Time')
+plt.xlabel('Date')
+plt.ylabel('Total Tokens')
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
+```
+
+### Cost by Model
+
+```python
+import phoenix as px
+import pandas as pd
+
+client = px.Client()
+spans_df = client.get_spans(project_name="my-app", limit=10000)
+
+# Group by model
+model_stats = spans_df.groupby('attributes.llm.model_name').agg({
+    'attributes.llm.token_count.prompt': 'sum',
+    'attributes.llm.token_count.completion': 'sum',
+    'attributes.llm.token_count.total': 'sum',
+    'context.span_id': 'count'
+}).round(0)
+
+model_stats.columns = ['Prompt Tokens', 'Completion Tokens', 'Total Tokens', 'Calls']
+
+print("\nUsage by Model:")
+print(model_stats.sort_values('Total Tokens', ascending=False))
+```
+
+### Cost per Session
+
+```python
+import phoenix as px
+import pandas as pd
+import json
+
+client = px.Client()
+spans_df = client.get_spans(project_name="chatbot", limit=10000)
+
+# Extract session IDs from metadata
+def extract_session_id(metadata):
+    if pd.isna(metadata):
+        return None
+    try:
+        meta = json.loads(metadata) if isinstance(metadata, str) else metadata
+        return meta.get('session_id')
+    except:
+        return None
+
+spans_df['session_id'] = spans_df['metadata'].apply(extract_session_id)
+
+# Calculate cost per session
+session_costs = spans_df.groupby('session_id').agg({
+    'attributes.llm.token_count.total': 'sum',
+    'context.span_id': 'count'
+}).round(0)
+
+session_costs.columns = ['Total Tokens', 'Spans']
+session_costs['Avg Tokens/Span'] = (
+    session_costs['Total Tokens'] / session_costs['Spans']
+).round(0)
+
+print("\nCost per Session:")
+print(session_costs.sort_values('Total Tokens', ascending=False).head(10))
+```
+
+## Real-World Example: Cost Monitoring
+
+```python
+import phoenix as px
+import pandas as pd
+from datetime import datetime, timedelta
+import smtplib
+from email.message import EmailMessage
+
+class CostMonitor:
+    def __init__(self, project_name: str, budget_limit: float):
+        self.client = px.Client()
+        self.project_name = project_name
+        self.budget_limit = budget_limit
+        
+        # Approximate pricing (USD per 1K tokens)
+        self.pricing = {
+            'gpt-4': {'input': 0.03, 'output': 0.06},
+            'gpt-4-turbo': {'input': 0.01, 'output': 0.03},
+            'gpt-3.5-turbo': {'input': 0.0005, 'output': 0.0015},
+        }
+    
+    def calculate_cost(self, model: str, prompt_tokens: int, completion_tokens: int) -> float:
+        """Calculate cost for a given model and token counts."""
+        if model not in self.pricing:
+            return 0.0
+        
+        prices = self.pricing[model]
+        cost = (
+            (prompt_tokens / 1000) * prices['input'] +
+            (completion_tokens / 1000) * prices['output']
+        )
+        return cost
+    
+    def get_daily_cost(self) -> float:
+        """Get total cost for today."""
+        # Get today's spans
+        today = datetime.now().date()
+        spans_df = self.client.get_spans(
+            project_name=self.project_name,
+            start_time=pd.Timestamp(today),
+            limit=10000
+        )
+        
+        if spans_df.empty:
+            return 0.0
+        
+        # Calculate costs
+        total_cost = 0.0
+        for _, span in spans_df.iterrows():
+            model = span.get('attributes.llm.model_name', '')
+            prompt_tokens = span.get('attributes.llm.token_count.prompt', 0)
+            completion_tokens = span.get('attributes.llm.token_count.completion', 0)
+            
+            cost = self.calculate_cost(model, prompt_tokens, completion_tokens)
+            total_cost += cost
+        
+        return total_cost
+    
+    def check_budget(self) -> dict:
+        """Check if spending is within budget."""
+        daily_cost = self.get_daily_cost()
+        percentage = (daily_cost / self.budget_limit) * 100
+        
+        return {
+            'daily_cost': daily_cost,
+            'budget_limit': self.budget_limit,
+            'percentage_used': percentage,
+            'over_budget': daily_cost > self.budget_limit
+        }
+    
+    def send_alert(self, status: dict):
+        """Send alert if over budget."""
+        if status['over_budget']:
+            print(f"⚠️  BUDGET ALERT: ${status['daily_cost']:.2f} spent (limit: ${self.budget_limit:.2f})")
+            # Send email/Slack notification here
+
+# Usage
+monitor = CostMonitor(
+    project_name="production-chatbot",
+    budget_limit=100.0  # $100/day
+)
+
+status = monitor.check_budget()
+print(f"Daily Cost: ${status['daily_cost']:.2f}")
+print(f"Budget: ${status['budget_limit']:.2f}")
+print(f"Usage: {status['percentage_used']:.1f}%")
+
+monitor.send_alert(status)
+```
+
+## Cost Optimization Strategies
+
+<Steps>
+  <Step title="Choose Appropriate Models">
+    Use cheaper models when possible:
+    ```python
+    # Use GPT-3.5 for simple tasks
+    if task_complexity == 'low':
+        model = 'gpt-3.5-turbo'  # $0.0005/1K input tokens
+    else:
+        model = 'gpt-4'  # $0.03/1K input tokens
+    ```
+  </Step>
+
+  <Step title="Optimize Prompt Length">
+    Reduce token usage by optimizing prompts:
+    ```python
+    # Track prompt efficiency
+    spans_df = client.get_spans(project_name="my-app")
+    
+    avg_prompt_tokens = spans_df['attributes.llm.token_count.prompt'].mean()
+    avg_completion_tokens = spans_df['attributes.llm.token_count.completion'].mean()
+    
+    print(f"Average prompt tokens: {avg_prompt_tokens:.0f}")
+    print(f"Average completion tokens: {avg_completion_tokens:.0f}")
+    
+    # Identify outliers
+    outliers = spans_df[
+        spans_df['attributes.llm.token_count.prompt'] > 
+        spans_df['attributes.llm.token_count.prompt'].quantile(0.95)
+    ]
+    print(f"\nHigh token count spans: {len(outliers)}")
+    ```
+  </Step>
+
+  <Step title="Implement Caching">
+    Cache LLM responses to reduce costs:
+    ```python
+    from functools import lru_cache
+    
+    @lru_cache(maxsize=1000)
+    def cached_llm_call(prompt: str, model: str) -> str:
+        """Cache LLM responses for identical prompts."""
+        response = llm.generate(prompt, model=model)
+        return response
+    ```
+  </Step>
+
+  <Step title="Set Budget Alerts">
+    Monitor costs and set up alerts:
+    ```python
+    import schedule
+    
+    monitor = CostMonitor(project_name="my-app", budget_limit=100.0)
+    
+    def check_budget_hourly():
+        status = monitor.check_budget()
+        if status['percentage_used'] > 80:
+            monitor.send_alert(status)
+    
+    schedule.every().hour.do(check_budget_hourly)
+    ```
+  </Step>
+</Steps>
+
+## Token Usage Best Practices
+
+<Warning>
+  Token counts are estimates. Actual billing may differ slightly from Phoenix calculations. Always verify costs with your provider's billing dashboard.
+</Warning>
+
+1. **Monitor regularly**: Set up daily/weekly cost reports
+2. **Set budgets**: Define limits per project/environment
+3. **Optimize prompts**: Reduce unnecessary tokens
+4. **Use appropriate models**: Match model to task complexity
+5. **Enable caching**: Reuse responses when possible
+6. **Track by feature**: Tag spans with feature flags to track costs per feature
+
+## Exporting Cost Data
+
+```python
+import phoenix as px
+import pandas as pd
+
+client = px.Client()
+spans_df = client.get_spans(project_name="my-app", limit=10000)
+
+# Prepare cost report
+cost_report = spans_df[[
+    'context.span_id',
+    'start_time',
+    'attributes.llm.model_name',
+    'attributes.llm.token_count.prompt',
+    'attributes.llm.token_count.completion',
+    'attributes.llm.token_count.total'
+]].copy()
+
+# Export to CSV
+cost_report.to_csv('cost_report.csv', index=False)
+print("Cost report exported to cost_report.csv")
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Overview" icon="book" href="/tracing/overview">
+    Learn more about tracing concepts
+  </Card>
+  
+  <Card title="Analytics" icon="chart-line" href="/analytics/overview">
+    Advanced analytics and dashboards
+  </Card>
+</CardGroup>

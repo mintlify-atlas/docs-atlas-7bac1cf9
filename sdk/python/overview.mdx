@@ -1,0 +1,162 @@
+---
+title: Python SDK Overview
+description: Overview of the Phoenix Python SDK packages and components
+---
+
+The Phoenix Python SDK provides a comprehensive toolkit for AI observability, tracing, and evaluation. It consists of three main packages that work together to help you monitor and improve your LLM applications.
+
+## Packages
+
+The Phoenix Python SDK is distributed as three separate packages:
+
+### arize-phoenix-client
+
+The core client library for interacting with Phoenix programmatically. Use this to:
+- Manage projects, datasets, and experiments
+- Query and annotate traces and spans
+- Create and version prompts
+- Run evaluations and experiments
+
+[Learn more about the Client →](/sdk/python/client)
+
+### arize-phoenix-otel
+
+OpenTelemetry integration for automatic tracing of LLM applications. Use this to:
+- Enable OpenTelemetry-based instrumentation
+- Auto-instrument popular frameworks (OpenAI, LangChain, LlamaIndex, etc.)
+- Configure trace export to Phoenix
+- Set up batching and performance optimization
+
+[Learn more about OTEL →](/sdk/python/otel)
+
+### arize-phoenix-evals
+
+Evaluation framework for assessing LLM outputs. Use this to:
+- Run LLM-based evaluations (hallucination, relevance, toxicity, etc.)
+- Create custom evaluators
+- Compute metrics on datasets
+- Integrate evaluations into your workflow
+
+[Learn more about Evals →](/sdk/python/evals)
+
+## Installation
+
+Install the packages you need:
+
+<CodeGroup>
+```bash Client Only
+pip install arize-phoenix-client
+```
+
+```bash OTEL Only
+pip install arize-phoenix-otel
+```
+
+```bash Evals Only
+pip install arize-phoenix-evals
+```
+
+```bash All Packages
+pip install arize-phoenix-client arize-phoenix-otel arize-phoenix-evals
+```
+</CodeGroup>
+
+## Quick Start
+
+Here's how the packages work together:
+
+```python
+# 1. Set up tracing with OTEL
+from phoenix.otel import register
+
+tracer_provider = register(
+    project_name="my-llm-app",
+    auto_instrument=True
+)
+
+# 2. Your LLM application runs and generates traces automatically
+import openai
+
+client = openai.OpenAI()
+response = client.chat.completions.create(
+    model="gpt-4",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+
+# 3. Use the client to query traces and run evaluations
+from phoenix.client import Client
+
+client = Client()
+project = client.projects.list()[0]
+traces = list(client.traces.list(project.id))
+
+# 4. Run evaluations on your traces
+from phoenix.evals import evaluate_dataframe
+from phoenix.evals.metrics import hallucination
+import pandas as pd
+
+df = pd.DataFrame([{
+    "output": response.choices[0].message.content,
+    "input": "Hello!",
+    "context": "System context"
+}])
+
+results = evaluate_dataframe(
+    df,
+    evaluators=[hallucination()]
+)
+```
+
+## Common Workflows
+
+### Development Workflow
+
+1. **Instrument your app** with `phoenix.otel.register()` to capture traces
+2. **Run your application** and generate traces automatically
+3. **Review traces** in the Phoenix UI or via the client
+4. **Run evaluations** to assess quality using `phoenix.evals`
+5. **Iterate** on prompts and configuration
+
+### Production Workflow
+
+1. **Configure OTEL** with batching for performance
+2. **Set up continuous evaluation** using the evals package
+3. **Monitor metrics** via the Phoenix UI
+4. **Use the client** for programmatic access to data
+5. **Create datasets** from production traces for testing
+
+## Environment Variables
+
+Configure the SDK using environment variables:
+
+<ParamField path="PHOENIX_COLLECTOR_ENDPOINT" type="string">
+  Phoenix server URL (default: `http://localhost:6006`)
+</ParamField>
+
+<ParamField path="PHOENIX_API_KEY" type="string">
+  API key for authentication with Phoenix Cloud
+</ParamField>
+
+<ParamField path="PHOENIX_PROJECT_NAME" type="string">
+  Default project name for traces (default: `default`)
+</ParamField>
+
+<ParamField path="PHOENIX_CLIENT_HEADERS" type="string">
+  Additional headers to send with requests (comma-separated `key:value` pairs)
+</ParamField>
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Python Client" icon="terminal" href="/sdk/python/client">
+    Interact with Phoenix programmatically
+  </Card>
+  
+  <Card title="Python OTEL" icon="radar" href="/sdk/python/otel">
+    Set up OpenTelemetry tracing
+  </Card>
+  
+  <Card title="Python Evals" icon="chart-line" href="/sdk/python/evals">
+    Evaluate LLM outputs
+  </Card>
+</CardGroup>

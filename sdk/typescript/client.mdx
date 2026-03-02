@@ -1,0 +1,528 @@
+---
+title: TypeScript Client Reference
+description: Complete reference for the Phoenix TypeScript client library
+---
+
+The `@arizeai/phoenix-client` package provides a type-safe, OpenAPI-based client for interacting with Phoenix from TypeScript and JavaScript applications.
+
+## Installation
+
+```bash
+npm install @arizeai/phoenix-client
+```
+
+## Client Creation
+
+The main entry point for interacting with Phoenix.
+
+### createClient()
+
+```typescript
+import { createClient } from '@arizeai/phoenix-client';
+
+const client = createClient({
+  options: {
+    baseUrl: 'http://localhost:6006',
+    headers: {
+      'Authorization': 'Bearer your-api-key'
+    }
+  }
+});
+```
+
+<ParamField path="options" type="ClientOptions">
+  Configuration options for the client.
+</ParamField>
+
+<ParamField path="options.baseUrl" type="string">
+  The base URL for the Phoenix API endpoint. Defaults to `PHOENIX_BASE_URL` environment variable or `http://localhost:6006`.
+</ParamField>
+
+<ParamField path="options.headers" type="Record<string, string>">
+  Additional headers to include in HTTP requests.
+</ParamField>
+
+<ParamField path="getEnvironmentOptions" type="() => Partial<ClientOptions>">
+  Function to get environment-based options. By default, reads from `process.env`.
+</ParamField>
+
+### Returns
+
+<ResponseField name="client" type="PhoenixClient">
+  A strongly-typed client instance with methods for all Phoenix API endpoints.
+</ResponseField>
+
+## API Methods
+
+The client provides strongly-typed methods for all Phoenix API endpoints using OpenAPI specification.
+
+### GET Requests
+
+```typescript
+// Get all projects
+const response = await client.GET('/v1/projects');
+
+if (response.data) {
+  const projects = response.data;
+  projects.forEach(project => {
+    console.log(project.name);
+  });
+}
+
+// Get a specific project
+const projectResponse = await client.GET('/v1/projects/{projectId}', {
+  params: {
+    path: {
+      projectId: 'project-123'
+    }
+  }
+});
+```
+
+### POST Requests
+
+```typescript
+// Create a new project
+const createResponse = await client.POST('/v1/projects', {
+  body: {
+    name: 'my-new-project',
+    description: 'A new project for testing'
+  }
+});
+
+if (createResponse.data) {
+  console.log('Created project:', createResponse.data.id);
+}
+```
+
+### PATCH Requests
+
+```typescript
+// Update a project
+const updateResponse = await client.PATCH('/v1/projects/{projectId}', {
+  params: {
+    path: {
+      projectId: 'project-123'
+    }
+  },
+  body: {
+    name: 'updated-name'
+  }
+});
+```
+
+### DELETE Requests
+
+```typescript
+// Delete a project
+const deleteResponse = await client.DELETE('/v1/projects/{projectId}', {
+  params: {
+    path: {
+      projectId: 'project-123'
+    }
+  }
+});
+```
+
+## Type Safety
+
+The client provides full type safety based on the OpenAPI specification:
+
+```typescript
+import type { Types } from '@arizeai/phoenix-client';
+
+// Access types from the API spec
+type Project = Types['V1']['components']['schemas']['Project'];
+type CreateProjectRequest = Types['V1']['components']['schemas']['CreateProjectRequest'];
+
+// TypeScript knows the exact shape of requests and responses
+const response = await client.GET('/v1/projects');
+// ^? response.data is Project[] | undefined
+
+// Path parameters are type-checked
+const project = await client.GET('/v1/projects/{projectId}', {
+  params: {
+    path: {
+      projectId: 'abc123' // TypeScript enforces this must be a string
+    }
+  }
+});
+```
+
+## Working with Traces
+
+```typescript
+// List traces for a project
+const tracesResponse = await client.GET('/v1/traces', {
+  params: {
+    query: {
+      project_id: 'project-123',
+      limit: 50,
+      offset: 0
+    }
+  }
+});
+
+if (tracesResponse.data) {
+  const traces = tracesResponse.data.traces;
+  
+  for (const trace of traces) {
+    console.log(`Trace ${trace.id}:`, trace.start_time);
+    
+    // Access spans
+    for (const span of trace.spans || []) {
+      console.log(`  Span ${span.id}:`, span.name);
+    }
+  }
+}
+```
+
+## Working with Datasets
+
+```typescript
+// Create a dataset
+const datasetResponse = await client.POST('/v1/datasets', {
+  body: {
+    name: 'qa-examples',
+    description: 'Question answering test cases'
+  }
+});
+
+if (datasetResponse.data) {
+  const dataset = datasetResponse.data;
+  
+  // Add examples to dataset
+  await client.POST('/v1/datasets/{datasetId}/examples', {
+    params: {
+      path: {
+        datasetId: dataset.id
+      }
+    },
+    body: {
+      examples: [
+        {
+          input: { question: 'What is Phoenix?' },
+          output: { answer: 'Phoenix is an LLM observability tool.' },
+          metadata: { difficulty: 'easy' }
+        }
+      ]
+    }
+  });
+}
+
+// Get dataset examples
+const examplesResponse = await client.GET('/v1/datasets/{datasetId}/examples', {
+  params: {
+    path: {
+      datasetId: 'dataset-123'
+    }
+  }
+});
+```
+
+## Working with Experiments
+
+```typescript
+// Create an experiment
+const experimentResponse = await client.POST('/v1/experiments', {
+  body: {
+    dataset_id: 'dataset-123',
+    name: 'gpt-4-baseline',
+    metadata: {
+      model: 'gpt-4',
+      temperature: 0.7
+    }
+  }
+});
+
+// List experiments
+const experimentsResponse = await client.GET('/v1/experiments', {
+  params: {
+    query: {
+      dataset_id: 'dataset-123'
+    }
+  }
+});
+
+// Get experiment runs
+const runsResponse = await client.GET('/v1/experiments/{experimentId}/runs', {
+  params: {
+    path: {
+      experimentId: 'experiment-123'
+    }
+  }
+});
+```
+
+## Working with Prompts
+
+```typescript
+// Create a prompt
+const promptResponse = await client.POST('/v1/prompts', {
+  body: {
+    name: 'qa-prompt',
+    template: 'Answer the question: {{question}}',
+    variables: ['question']
+  }
+});
+
+// Get a prompt
+const getPromptResponse = await client.GET('/v1/prompts/{promptId}', {
+  params: {
+    path: {
+      promptId: 'prompt-123'
+    }
+  }
+});
+
+// Create a new version
+const versionResponse = await client.POST('/v1/prompts/{promptId}/versions', {
+  params: {
+    path: {
+      promptId: 'prompt-123'
+    }
+  },
+  body: {
+    template: 'Answer this question concisely: {{question}}',
+    variables: ['question']
+  }
+});
+```
+
+## Span Annotations
+
+```typescript
+// Add an annotation to a span
+await client.POST('/v1/spans/{spanId}/annotations', {
+  params: {
+    path: {
+      spanId: 'span-123'
+    }
+  },
+  body: {
+    name: 'correctness',
+    label: 'correct',
+    score: 1.0,
+    explanation: 'The response is accurate'
+  }
+});
+
+// Add a note to a span
+await client.POST('/v1/spans/{spanId}/notes', {
+  params: {
+    path: {
+      spanId: 'span-123'
+    }
+  },
+  body: {
+    note: 'Interesting edge case'
+  }
+});
+
+// Get span annotations
+const annotationsResponse = await client.GET('/v1/spans/{spanId}/annotations', {
+  params: {
+    path: {
+      spanId: 'span-123'
+    }
+  }
+});
+```
+
+## Error Handling
+
+```typescript
+try {
+  const response = await client.GET('/v1/projects/{projectId}', {
+    params: {
+      path: {
+        projectId: 'non-existent'
+      }
+    }
+  });
+  
+  if (response.error) {
+    console.error('API Error:', response.error);
+  }
+} catch (error) {
+  console.error('Request failed:', error);
+}
+```
+
+## Environment Variables
+
+Configure the client using environment variables:
+
+```bash
+export PHOENIX_BASE_URL="http://localhost:6006"
+export PHOENIX_API_KEY="your-api-key"
+```
+
+The client will automatically pick up these values:
+
+```typescript
+import { createClient } from '@arizeai/phoenix-client';
+
+// Uses PHOENIX_BASE_URL and PHOENIX_API_KEY from environment
+const client = createClient();
+```
+
+## Advanced Configuration
+
+### Custom Headers
+
+```typescript
+const client = createClient({
+  options: {
+    headers: {
+      'Authorization': 'Bearer my-token',
+      'X-Custom-Header': 'custom-value'
+    }
+  }
+});
+```
+
+### Custom Base URL
+
+```typescript
+const client = createClient({
+  options: {
+    baseUrl: 'https://app.phoenix.arize.com'
+  }
+});
+```
+
+### Request Interceptors
+
+```typescript
+import { createClient } from '@arizeai/phoenix-client';
+
+const client = createClient({
+  options: {
+    headers: {
+      'Authorization': 'Bearer token'
+    },
+    // Add request interceptor logic via fetch options
+    fetch: async (input, init) => {
+      console.log('Making request to:', input);
+      return fetch(input, init);
+    }
+  }
+});
+```
+
+## Examples
+
+### Create Dataset from Traces
+
+```typescript
+import { createClient } from '@arizeai/phoenix-client';
+
+const client = createClient();
+
+// Get traces
+const tracesResponse = await client.GET('/v1/traces', {
+  params: {
+    query: {
+      project_id: 'production',
+      limit: 100
+    }
+  }
+});
+
+if (tracesResponse.data) {
+  // Filter high-quality traces
+  const spanIds = [];
+  
+  for (const trace of tracesResponse.data.traces) {
+    for (const span of trace.spans || []) {
+      if (span.attributes?.user_rating >= 4) {
+        spanIds.push(span.id);
+      }
+    }
+  }
+  
+  // Create dataset from spans
+  await client.POST('/v1/datasets/from-spans', {
+    body: {
+      name: 'high-quality-examples',
+      span_ids: spanIds
+    }
+  });
+}
+```
+
+### Monitor Experiment Progress
+
+```typescript
+import { createClient } from '@arizeai/phoenix-client';
+
+const client = createClient();
+const experimentId = 'experiment-123';
+
+const checkProgress = async () => {
+  const response = await client.GET('/v1/experiments/{experimentId}/runs', {
+    params: {
+      path: { experimentId }
+    }
+  });
+  
+  if (response.data) {
+    const runs = response.data.runs;
+    const completed = runs.filter(r => r.status === 'completed').length;
+    const total = runs.length;
+    
+    console.log(`Progress: ${completed}/${total}`);
+    
+    if (completed === total) {
+      console.log('Experiment complete!');
+    } else {
+      setTimeout(checkProgress, 5000);
+    }
+  }
+};
+
+await checkProgress();
+```
+
+### Batch Annotate Spans
+
+```typescript
+import { createClient } from '@arizeai/phoenix-client';
+
+const client = createClient();
+
+// Get spans to annotate
+const tracesResponse = await client.GET('/v1/traces', {
+  params: {
+    query: {
+      project_id: 'project-123'
+    }
+  }
+});
+
+if (tracesResponse.data) {
+  for (const trace of tracesResponse.data.traces) {
+    for (const span of trace.spans || []) {
+      if (span.attributes?.status === 'error') {
+        await client.POST('/v1/spans/{spanId}/annotations', {
+          params: {
+            path: { spanId: span.id }
+          },
+          body: {
+            name: 'needs_review',
+            label: 'true',
+            score: 1.0
+          }
+        });
+      }
+    }
+  }
+}
+```
+
+## See Also
+
+- [TypeScript OTEL Reference](/sdk/typescript/otel) - Set up tracing
+- [TypeScript Evals Reference](/sdk/typescript/evals) - Run evaluations
+- [API Reference](https://docs.arize.com/phoenix/api) - Complete API documentation

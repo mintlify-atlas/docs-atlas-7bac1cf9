@@ -1,0 +1,496 @@
+---
+title: Annotations
+description: Add human feedback and automated evaluations to traces
+---
+
+Annotations allow you to enrich traces with feedback, evaluations, and labels. This helps you improve LLM applications by identifying issues, measuring quality, and creating training datasets.
+
+## Types of Annotations
+
+Phoenix supports two types of annotations:
+
+1. **Manual Annotations**: Human feedback added through the UI
+2. **Programmatic Annotations**: Automated evaluations added via code
+
+## Manual Annotations in the UI
+
+Add feedback directly in the Phoenix UI:
+
+<Steps>
+  <Step title="Open a Trace">
+    Navigate to the Traces view and click on a trace to open the detail view.
+  </Step>
+
+  <Step title="Add Annotation">
+    Click the "Add Annotation" button on any span.
+  </Step>
+
+  <Step title="Provide Feedback">
+    Choose annotation type:
+    - **Score**: Numeric rating (e.g., 1-5)
+    - **Label**: Categorical label (e.g., "helpful", "incorrect")
+    - **Explanation**: Free-text explanation
+  </Step>
+
+  <Step title="Save">
+    Click "Save" to store the annotation.
+  </Step>
+</Steps>
+
+Manual annotations are useful for:
+- Labeling training examples
+- Flagging problematic outputs
+- Providing qualitative feedback
+- Creating evaluation datasets
+
+## Programmatic Annotations
+
+Add evaluations programmatically using the Phoenix evaluation framework.
+
+### SpanEvaluations
+
+Evaluate individual spans:
+
+```python
+import pandas as pd
+from phoenix.trace import SpanEvaluations
+
+# Create evaluation dataframe
+eval_data = pd.DataFrame({
+    'span_id': ['span-1', 'span-2', 'span-3'],
+    'score': [1.0, 0.5, 0.0],
+    'label': ['helpful', 'neutral', 'unhelpful'],
+    'explanation': [
+        'Response was accurate and helpful',
+        'Response was partially correct',
+        'Response was incorrect'
+    ]
+})
+
+# Create SpanEvaluations
+evaluations = SpanEvaluations(
+    eval_name='helpfulness',
+    dataframe=eval_data
+)
+
+# Log to Phoenix
+import phoenix as px
+
+client = px.Client(endpoint='http://localhost:6006')
+client.log_evaluations(evaluations)
+```
+
+### Evaluation Schema
+
+SpanEvaluations require specific columns:
+
+| Column | Type | Required | Description |
+|--------|------|----------|-------------|
+| `span_id` | string | Yes | Span identifier to annotate |
+| `score` | numeric | No | Numeric score (typically 0-1) |
+| `label` | string | No | Categorical label |
+| `explanation` | string | No | Free-text explanation |
+
+<Note>
+  At least one of `score`, `label`, or `explanation` must be provided.
+</Note>
+
+### LLM-as-Judge Evaluations
+
+Use LLMs to automatically evaluate traces:
+
+```python
+import phoenix as px
+from phoenix.evals import (
+    HallucinationEvaluator,
+    QAEvaluator,
+    ToxicityEvaluator,
+    run_evals
+)
+
+# Connect to Phoenix
+client = px.Client()
+
+# Get spans to evaluate
+spans_df = client.get_spans(
+    project_name='my-project',
+    limit=100
+)
+
+# Define evaluators
+evaluators = [
+    HallucinationEvaluator(),
+    QAEvaluator(),
+    ToxicityEvaluator()
+]
+
+# Run evaluations
+results = run_evals(
+    dataframe=spans_df,
+    evaluators=evaluators,
+    provide_explanation=True
+)
+
+# Log results to Phoenix
+for eval_name, eval_df in results.items():
+    evaluations = SpanEvaluations(
+        eval_name=eval_name,
+        dataframe=eval_df
+    )
+    client.log_evaluations(evaluations)
+```
+
+### Custom Evaluators
+
+Create custom evaluation logic:
+
+```python
+import pandas as pd
+from phoenix.trace import SpanEvaluations
+import phoenix as px
+
+client = px.Client()
+spans_df = client.get_spans(project_name='my-project')
+
+def evaluate_response_length(spans_df: pd.DataFrame) -> pd.DataFrame:
+    """Evaluate if responses are appropriate length."""
+    results = []
+    
+    for _, span in spans_df.iterrows():
+        output = span.get('attributes.output.value', '')
+        length = len(output.split())
+        
+        if length < 10:
+            score = 0.0
+            label = 'too_short'
+            explanation = f'Response only {length} words'
+        elif length > 200:
+            score = 0.5
+            label = 'too_long'
+            explanation = f'Response is {length} words, may be verbose'
+        else:
+            score = 1.0
+            label = 'appropriate'
+            explanation = f'Response length ({length} words) is good'
+        
+        results.append({
+            'span_id': span['context.span_id'],
+            'score': score,
+            'label': label,
+            'explanation': explanation
+        })
+    
+    return pd.DataFrame(results)
+
+# Run custom evaluation
+eval_df = evaluate_response_length(spans_df)
+
+# Log to Phoenix
+evaluations = SpanEvaluations(
+    eval_name='response_length',
+    dataframe=eval_df
+)
+client.log_evaluations(evaluations)
+```
+
+## DocumentEvaluations
+
+Evaluate retrieved documents:
+
+```python
+import pandas as pd
+from phoenix.trace import DocumentEvaluations
+
+# Evaluate relevance of retrieved documents
+eval_data = pd.DataFrame({
+    'span_id': ['span-1', 'span-1', 'span-2'],
+    'position': [0, 1, 0],  # Document position in retrieval results
+    'score': [1.0, 0.5, 0.0],
+    'label': ['relevant', 'partially_relevant', 'irrelevant'],
+    'explanation': [
+        'Document directly answers query',
+        'Document has some relevant info',
+        'Document is off-topic'
+    ]
+})
+
+evaluations = DocumentEvaluations(
+    eval_name='relevance',
+    dataframe=eval_data
+)
+
+client.log_evaluations(evaluations)
+```
+
+<Note>
+  DocumentEvaluations require both `span_id` and `position` to identify which document in which span is being evaluated.
+</Note>
+
+## TraceEvaluations
+
+Evaluate entire traces:
+
+```python
+import pandas as pd
+from phoenix.trace import TraceEvaluations
+
+# Evaluate overall trace quality
+eval_data = pd.DataFrame({
+    'trace_id': ['trace-1', 'trace-2', 'trace-3'],
+    'score': [1.0, 0.8, 0.3],
+    'label': ['success', 'success', 'failure'],
+    'explanation': [
+        'Task completed successfully',
+        'Task completed with minor issues',
+        'Task failed to complete'
+    ]
+})
+
+evaluations = TraceEvaluations(
+    eval_name='task_completion',
+    dataframe=eval_data
+)
+
+client.log_evaluations(evaluations)
+```
+
+## Built-in Evaluators
+
+Phoenix provides several pre-built evaluators:
+
+<Tabs>
+  <Tab title="Hallucination">
+    ```python
+    from phoenix.evals import HallucinationEvaluator, run_evals
+    
+    evaluator = HallucinationEvaluator(
+        model="gpt-4",
+        template="Does the output contradict or deviate from the reference?"
+    )
+    
+    results = run_evals(
+        dataframe=spans_df,
+        evaluators=[evaluator],
+        provide_explanation=True
+    )
+    ```
+    
+    Detects when LLM outputs contain hallucinated information.
+  </Tab>
+
+  <Tab title="QA Correctness">
+    ```python
+    from phoenix.evals import QAEvaluator, run_evals
+    
+    evaluator = QAEvaluator(
+        model="gpt-4"
+    )
+    
+    results = run_evals(
+        dataframe=spans_df,
+        evaluators=[evaluator],
+        provide_explanation=True
+    )
+    ```
+    
+    Evaluates if answers are correct given a question and context.
+  </Tab>
+
+  <Tab title="Toxicity">
+    ```python
+    from phoenix.evals import ToxicityEvaluator, run_evals
+    
+    evaluator = ToxicityEvaluator(
+        model="gpt-4"
+    )
+    
+    results = run_evals(
+        dataframe=spans_df,
+        evaluators=[evaluator],
+        provide_explanation=True
+    )
+    ```
+    
+    Detects toxic, offensive, or inappropriate content.
+  </Tab>
+
+  <Tab title="Relevance">
+    ```python
+    from phoenix.evals import RelevanceEvaluator, run_evals
+    
+    evaluator = RelevanceEvaluator(
+        model="gpt-4"
+    )
+    
+    results = run_evals(
+        dataframe=spans_df,
+        evaluators=[evaluator],
+        provide_explanation=True
+    )
+    ```
+    
+    Evaluates if retrieved documents are relevant to the query.
+  </Tab>
+</Tabs>
+
+## Real-World Example: Production Monitoring
+
+```python
+import phoenix as px
+from phoenix.evals import (
+    HallucinationEvaluator,
+    ToxicityEvaluator,
+    run_evals
+)
+from phoenix.trace import SpanEvaluations
+import schedule
+import time
+
+client = px.Client(endpoint='http://localhost:6006')
+
+def evaluate_recent_traces():
+    """Evaluate traces from the last hour."""
+    print("Running evaluations...")
+    
+    # Get recent spans
+    spans_df = client.get_spans(
+        project_name='production-chatbot',
+        limit=1000,
+        start_time=pd.Timestamp.now() - pd.Timedelta(hours=1)
+    )
+    
+    if spans_df.empty:
+        print("No new spans to evaluate")
+        return
+    
+    # Run evaluations
+    evaluators = [
+        HallucinationEvaluator(model='gpt-4'),
+        ToxicityEvaluator(model='gpt-4')
+    ]
+    
+    results = run_evals(
+        dataframe=spans_df,
+        evaluators=evaluators,
+        provide_explanation=True
+    )
+    
+    # Log results
+    for eval_name, eval_df in results.items():
+        evaluations = SpanEvaluations(
+            eval_name=eval_name,
+            dataframe=eval_df
+        )
+        client.log_evaluations(evaluations)
+        print(f"Logged {len(eval_df)} {eval_name} evaluations")
+    
+    # Alert on issues
+    for eval_name, eval_df in results.items():
+        failed = eval_df[eval_df['score'] < 0.5]
+        if len(failed) > 0:
+            print(f"⚠️  {len(failed)} spans failed {eval_name} evaluation")
+            # Send alert to monitoring system
+
+# Run every hour
+schedule.every().hour.do(evaluate_recent_traces)
+
+while True:
+    schedule.run_pending()
+    time.sleep(60)
+```
+
+## Viewing Annotations in Phoenix
+
+### In the UI
+
+1. Navigate to the Traces view
+2. Click on a trace to open details
+3. Annotations appear in the "Evaluations" tab
+4. Filter traces by evaluation scores
+
+### Using the Client
+
+```python
+import phoenix as px
+
+client = px.Client()
+
+# Get evaluations for a project
+evaluations = client.get_evaluations(
+    project_name='my-project'
+)
+
+for eval in evaluations:
+    print(f"Evaluation: {eval.name}")
+    print(f"  Spans evaluated: {len(eval.dataframe)}")
+    print(f"  Average score: {eval.dataframe['score'].mean():.2f}")
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Define Clear Evaluation Criteria">
+    ```python
+    # Good: Specific, measurable criteria
+    evaluator = QAEvaluator(
+        model="gpt-4",
+        criteria="Answer must be factually correct and cite sources"
+    )
+    
+    # Avoid: Vague criteria
+    evaluator = QAEvaluator(
+        model="gpt-4",
+        criteria="Answer should be good"
+    )
+    ```
+  </Step>
+
+  <Step title="Always Provide Explanations">
+    ```python
+    # Enable explanations for debugging
+    results = run_evals(
+        dataframe=spans_df,
+        evaluators=evaluators,
+        provide_explanation=True  # ✓
+    )
+    ```
+  </Step>
+
+  <Step title="Combine Human and Automated Evals">
+    Use LLM evaluators for scale, human evaluators for quality:
+    ```python
+    # Automated evaluation for all traces
+    automated_evals = run_evals(spans_df, [ToxicityEvaluator()])
+    
+    # Manual review of flagged traces
+    flagged = automated_evals['toxicity'][automated_evals['toxicity']['score'] > 0.7]
+    print(f"Please manually review {len(flagged)} flagged traces")
+    ```
+  </Step>
+
+  <Step title="Track Evaluation Coverage">
+    ```python
+    # Ensure all spans are evaluated
+    spans_df = client.get_spans(project_name='my-project')
+    evals_df = client.get_evaluations(project_name='my-project')
+    
+    evaluated_spans = set(evals_df['span_id'].unique())
+    total_spans = set(spans_df['context.span_id'].unique())
+    
+    coverage = len(evaluated_spans) / len(total_spans)
+    print(f"Evaluation coverage: {coverage:.1%}")
+    ```
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Cost Tracking" icon="dollar-sign" href="/tracing/cost-tracking">
+    Monitor LLM costs across providers
+  </Card>
+  
+  <Card title="Evaluations" icon="chart-line" href="/evaluations/overview">
+    Learn more about the evaluation framework
+  </Card>
+</CardGroup>

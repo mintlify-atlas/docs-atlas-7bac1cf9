@@ -1,0 +1,491 @@
+---
+title: Prompt Management
+description: Centralized prompt management with version control, tagging, and systematic testing for production LLM applications
+---
+
+Phoenix Prompt Management provides a centralized system for versioning, organizing, and deploying prompts across your LLM applications. Treat prompts as code artifacts with proper version control, testing, and deployment workflows.
+
+## Why Prompt Management?
+
+As LLM applications mature, prompts become critical infrastructure that requires:
+
+- **Version Control**: Track changes over time and roll back when needed
+- **Collaboration**: Enable teams to share and review prompts
+- **Testing**: Validate prompt changes before production deployment
+- **Governance**: Understand which prompts are in use and their performance
+- **Reproducibility**: Ensure consistent behavior across environments
+
+Phoenix Prompt Management solves these challenges with a Git-like versioning system for prompts.
+
+## Core Concepts
+
+### Prompts
+
+A **prompt** is a named template with:
+- **Name**: Unique identifier (e.g., "customer_support_greeting")
+- **Template**: The actual prompt text with optional variables
+- **Metadata**: Model settings, tags, and custom properties
+- **Versions**: Complete history of changes
+
+### Versions
+
+Each time you update a prompt, a new **version** is created with:
+- **Version ID**: Unique identifier for this specific version
+- **Sequence Number**: Auto-incrementing version number (v1, v2, v3...)
+- **Template**: The prompt text for this version
+- **Created At**: Timestamp of creation
+- **Commit Message**: Description of changes (optional)
+
+### Tags
+
+**Tags** are human-readable labels attached to specific versions:
+- `production` - Currently deployed in production
+- `staging` - Being tested in staging environment
+- `v1.0` - Semantic version markers
+- `experiment-baseline` - Reference for A/B tests
+
+Tags can be moved between versions, similar to Git tags.
+
+## Creating and Managing Prompts
+
+### Create a Prompt
+
+Create prompts programmatically or through the UI:
+
+```python
+import phoenix as px
+
+client = px.Client()
+
+# Create a new prompt
+prompt = client.create_prompt(
+    name="customer_support_greeting",
+    template="""You are a customer support agent for {{company_name}}.
+    
+    Your role is to help users with:
+    - Account issues
+    - Billing questions
+    - Product information
+    
+    Be professional, friendly, and concise.
+    
+    Customer Query: {{query}}
+    
+    Response:""",
+    metadata={
+        "model": "gpt-4",
+        "temperature": 0.7,
+        "max_tokens": 500,
+        "owner": "support-team"
+    }
+)
+
+print(f"Created prompt: {prompt.name}")
+print(f"Version: {prompt.version_id}")
+```
+
+### Update a Prompt
+
+Updating a prompt creates a new version:
+
+```python
+# Update the template (creates v2)
+prompt.update(
+    template="""You are a customer support agent for {{company_name}}.
+    
+    Guidelines:
+    - Be empathetic and patient
+    - Provide clear, actionable solutions
+    - Escalate to human agents when necessary
+    
+    Customer Query: {{query}}
+    
+    Response:""",
+    commit_message="Added escalation guidelines"
+)
+
+print(f"New version: {prompt.version_id}")
+```
+
+### List Versions
+
+View version history:
+
+```python
+# Get all versions
+versions = client.list_prompt_versions(
+    prompt_name="customer_support_greeting"
+)
+
+for version in versions:
+    print(f"v{version.sequence_number}: {version.created_at}")
+    if version.commit_message:
+        print(f"  Message: {version.commit_message}")
+```
+
+### Retrieve Specific Version
+
+Load a specific prompt version:
+
+```python
+# Get by version number
+prompt_v1 = client.get_prompt(
+    name="customer_support_greeting",
+    version=1
+)
+
+# Get by version ID
+prompt_specific = client.get_prompt(
+    name="customer_support_greeting",
+    version_id="version-abc-123"
+)
+
+# Get latest version
+prompt_latest = client.get_prompt(
+    name="customer_support_greeting"
+)
+```
+
+## Working with Tags
+
+### Create Tags
+
+Tag specific versions for easy reference:
+
+```python
+# Tag current version as production
+client.tag_prompt_version(
+    prompt_name="customer_support_greeting",
+    version_id=prompt.version_id,
+    tag="production"
+)
+
+# Tag for staging
+client.tag_prompt_version(
+    prompt_name="customer_support_greeting",
+    version_id=prompt.version_id,
+    tag="staging"
+)
+
+# Semantic versioning
+client.tag_prompt_version(
+    prompt_name="customer_support_greeting",
+    version_id=prompt.version_id,
+    tag="v1.0.0"
+)
+```
+
+### Retrieve by Tag
+
+Load prompts using tags:
+
+```python
+# Get production version
+prod_prompt = client.get_prompt(
+    name="customer_support_greeting",
+    tag="production"
+)
+
+# Get staging version
+staging_prompt = client.get_prompt(
+    name="customer_support_greeting",
+    tag="staging"
+)
+```
+
+### Move Tags
+
+Update tags to point to different versions:
+
+```python
+# After testing staging, promote to production
+client.tag_prompt_version(
+    prompt_name="customer_support_greeting",
+    version_id=staging_version_id,
+    tag="production"  # Moves production tag to new version
+)
+```
+
+### List Tags
+
+View all tags for a prompt:
+
+```python
+tags = client.list_prompt_tags(
+    prompt_name="customer_support_greeting"
+)
+
+for tag in tags:
+    print(f"{tag.name} → v{tag.version.sequence_number}")
+```
+
+## Using Prompts in Applications
+
+### Basic Usage
+
+Load and render prompts in your application:
+
+```python
+import phoenix as px
+from openai import OpenAI
+
+px_client = px.Client()
+openai_client = OpenAI()
+
+# Load production prompt
+prompt = px_client.get_prompt(
+    name="customer_support_greeting",
+    tag="production"
+)
+
+# Render with variables
+rendered = prompt.render(
+    company_name="Acme Inc",
+    query="How do I reset my password?"
+)
+
+# Use with LLM
+response = openai_client.chat.completions.create(
+    model=prompt.metadata.get("model", "gpt-4"),
+    temperature=prompt.metadata.get("temperature", 0.7),
+    messages=[{"role": "user", "content": rendered}]
+)
+```
+
+### Template Variables
+
+Phoenix supports template variable substitution:
+
+```python
+template = """You are {{role}} with expertise in {{domain}}.
+
+User: {{user_input}}
+
+Assistant:"""
+
+prompt = client.create_prompt(
+    name="expert_assistant",
+    template=template
+)
+
+rendered = prompt.render(
+    role="a senior software engineer",
+    domain="distributed systems",
+    user_input="How does consensus work in Raft?"
+)
+```
+
+### Fallback Handling
+
+Handle missing prompts gracefully:
+
+```python
+try:
+    prompt = client.get_prompt(
+        name="custom_prompt",
+        tag="production"
+    )
+except PromptNotFoundError:
+    # Fallback to default prompt
+    prompt = client.get_prompt(
+        name="default_fallback",
+        tag="production"
+    )
+```
+
+## Testing Prompts
+
+### Playground Integration
+
+Test prompts interactively in the Playground (see [Playground](/features/playground)):
+
+<Steps>
+  <Step title="Load prompt">
+    Open the Playground and click "Load Prompt", then select your prompt and version/tag.
+  </Step>
+  
+  <Step title="Test with real data">
+    Use production trace replay or manual inputs to test the prompt.
+  </Step>
+  
+  <Step title="Iterate and save">
+    Modify the prompt in the Playground, then save as a new version.
+  </Step>
+</Steps>
+
+### Systematic Testing with Experiments
+
+Test prompt changes systematically using experiments (see [Experiments](/features/experiments)):
+
+```python
+from phoenix.experiments import run_experiment
+import phoenix as px
+
+client = px.Client()
+
+# Load dataset
+dataset = client.get_dataset(name="support_queries")
+
+# Define task using prompt
+def task_with_prompt(input, version_tag):
+    prompt = client.get_prompt(
+        name="customer_support_greeting",
+        tag=version_tag
+    )
+    
+    rendered = prompt.render(
+        company_name="Acme Inc",
+        query=input['query']
+    )
+    
+    response = openai_client.chat.completions.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": rendered}]
+    )
+    
+    return {"answer": response.choices[0].message.content}
+
+# Test current production version
+exp_prod = run_experiment(
+    dataset=dataset,
+    task=lambda input: task_with_prompt(input, "production"),
+    experiment_name="prompt-production"
+)
+
+# Test new staging version
+exp_staging = run_experiment(
+    dataset=dataset,
+    task=lambda input: task_with_prompt(input, "staging"),
+    experiment_name="prompt-staging"
+)
+
+# Compare results in Phoenix UI
+```
+
+## Deployment Workflow
+
+Recommended workflow for managing prompts in production:
+
+<Steps>
+  <Step title="Create and iterate locally">
+    ```python
+    # Create new prompt version
+    prompt = client.create_prompt(name="my_prompt", template="...")
+    ```
+  </Step>
+  
+  <Step title="Tag as development">
+    ```python
+    client.tag_prompt_version(
+        prompt_name="my_prompt",
+        version_id=prompt.version_id,
+        tag="dev"
+    )
+    ```
+  </Step>
+  
+  <Step title="Test in staging">
+    ```python
+    # After validation, promote to staging
+    client.tag_prompt_version(
+        prompt_name="my_prompt",
+        version_id=prompt.version_id,
+        tag="staging"
+    )
+    
+    # Run experiments on staging
+    result = run_experiment(
+        dataset=test_dataset,
+        task=staging_task,
+        experiment_name="staging-validation"
+    )
+    ```
+  </Step>
+  
+  <Step title="Deploy to production">
+    ```python
+    # After successful testing, promote to production
+    client.tag_prompt_version(
+        prompt_name="my_prompt",
+        version_id=prompt.version_id,
+        tag="production"
+    )
+    ```
+  </Step>
+  
+  <Step title="Monitor performance">
+    Use Phoenix tracing to monitor production performance. If issues arise, rollback:
+    
+    ```python
+    # Rollback to previous version
+    client.tag_prompt_version(
+        prompt_name="my_prompt",
+        version_id=previous_version_id,
+        tag="production"
+    )
+    ```
+  </Step>
+</Steps>
+
+## Best Practices
+
+<Note>
+  **Use Descriptive Names**: Name prompts based on their purpose (e.g., `support_greeting`, `summarization_technical_docs`).
+</Note>
+
+**Commit Messages**: Always include meaningful commit messages when updating prompts.
+
+**Tagging Strategy**: Maintain consistent tag names across prompts:
+- `production` - Live in production
+- `staging` - Being tested
+- `canary` - Gradual rollout
+- `rollback` - Previous stable version
+
+**Version Metadata**: Store model settings and generation parameters in prompt metadata.
+
+**Test Before Production**: Always validate prompt changes on representative datasets before deploying.
+
+**Monitor Performance**: Track evaluation metrics for prompts in production using tracing and experiments.
+
+**Document Changes**: Use commit messages and metadata to explain why changes were made.
+
+## Phoenix UI Features
+
+The Phoenix UI provides rich prompt management capabilities:
+
+### Prompt Library
+
+- Browse all prompts in your organization
+- Search by name, tag, or metadata
+- View version history
+- Compare versions side-by-side
+
+### Version Comparison
+
+- Diff view between any two versions
+- Highlight template changes
+- Compare metadata changes
+- View performance metrics per version
+
+### Deployment Status
+
+- See which versions are tagged for production/staging
+- View last deployment timestamp
+- Track rollback history
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Playground" icon="gamepad" href="/features/playground">
+    Test prompts interactively before deployment
+  </Card>
+  <Card title="Experiments" icon="flask" href="/features/experiments">
+    Systematically validate prompt changes
+  </Card>
+  <Card title="Tracing" icon="chart-network" href="/features/tracing">
+    Monitor prompt performance in production
+  </Card>
+  <Card title="Prompts API" icon="code" href="/api/overview">
+    Complete API reference for prompt management
+  </Card>
+</CardGroup>

@@ -1,0 +1,457 @@
+---
+title: Sessions
+description: Group related traces into sessions for better analysis and debugging
+---
+
+Sessions provide a way to group related traces together, making it easier to understand multi-turn conversations, user interactions, or related operations.
+
+## What are Sessions?
+
+A session represents a logical grouping of traces that belong together, such as:
+
+- **Multi-turn conversations** with a chatbot
+- **User sessions** across multiple requests
+- **Related operations** in a workflow
+- **A/B test variants** for comparison
+
+## Why Use Sessions?
+
+Sessions help you:
+
+- **Track conversations** across multiple LLM interactions
+- **Analyze user behavior** over time
+- **Debug issues** by viewing all related traces together
+- **Calculate metrics** across multiple operations
+- **Group experiments** for comparison
+
+## Setting Session IDs
+
+### Using `using_session` Context Manager
+
+The recommended way to set session IDs:
+
+```python
+from openinference.instrumentation import using_session
+from openai import OpenAI
+
+client = OpenAI()
+
+# All traces within this context belong to the same session
+with using_session(session_id="user-123-conversation-1"):
+    response1 = client.chat.completions.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello!"}]
+    )
+    
+    response2 = client.chat.completions.create(
+        model="gpt-4",
+        messages=[
+            {"role": "user", "content": "Hello!"},
+            {"role": "assistant", "content": response1.choices[0].message.content},
+            {"role": "user", "content": "What's the weather?"}
+        ]
+    )
+```
+
+All traces created within the `using_session` context will have the same session ID in their metadata.
+
+### Manual Session Metadata
+
+You can also set session metadata manually on spans:
+
+```python
+from opentelemetry import trace
+from openinference.semconv.trace import SpanAttributes
+import json
+
+tracer = trace.get_tracer(__name__)
+
+with tracer.start_as_current_span("chat-turn") as span:
+    # Set session ID in metadata
+    metadata = {
+        "session_id": "user-123-session-456",
+        "user_id": "user-123",
+        "conversation_id": "conv-789"
+    }
+    
+    span.set_attribute(
+        SpanAttributes.METADATA,
+        json.dumps(metadata)
+    )
+```
+
+## Session ID Strategies
+
+<Tabs>
+  <Tab title="User-Based">
+    ```python
+    import uuid
+    from openinference.instrumentation import using_session
+    
+    def handle_user_request(user_id: str, message: str):
+        # Create session per user
+        session_id = f"user-{user_id}"
+        
+        with using_session(session_id=session_id):
+            return process_message(message)
+    ```
+  </Tab>
+
+  <Tab title="Conversation-Based">
+    ```python
+    import uuid
+    from openinference.instrumentation import using_session
+    
+    class ChatSession:
+        def __init__(self):
+            self.session_id = str(uuid.uuid4())
+            self.messages = []
+        
+        def send_message(self, message: str):
+            with using_session(session_id=self.session_id):
+                response = llm.generate(self.messages + [message])
+                self.messages.append(message)
+                self.messages.append(response)
+                return response
+    
+    # Each conversation gets unique session
+    chat = ChatSession()
+    chat.send_message("Hello!")
+    chat.send_message("How are you?") # Same session
+    ```
+  </Tab>
+
+  <Tab title="Time-Based">
+    ```python
+    from datetime import datetime
+    from openinference.instrumentation import using_session
+    
+    def handle_request(user_id: str, message: str):
+        # Session per hour per user
+        hour = datetime.now().strftime("%Y-%m-%d-%H")
+        session_id = f"{user_id}-{hour}"
+        
+        with using_session(session_id=session_id):
+            return process_message(message)
+    ```
+  </Tab>
+
+  <Tab title="Workflow-Based">
+    ```python
+    import uuid
+    from openinference.instrumentation import using_session
+    
+    def process_document(document_id: str):
+        # Session for entire document processing workflow
+        session_id = f"doc-{document_id}-{uuid.uuid4()}"
+        
+        with using_session(session_id=session_id):
+            # All steps share same session
+            chunks = chunk_document(document_id)
+            embeddings = generate_embeddings(chunks)
+            store_embeddings(embeddings)
+    ```
+  </Tab>
+</Tabs>
+
+## Real-World Example: Chat Application
+
+Here's a complete example of using sessions in a chat application:
+
+```python
+import uuid
+import gradio as gr
+from openinference.instrumentation import using_session
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
+from openinference.semconv.trace import SpanAttributes
+from phoenix.otel import register
+from openai import OpenAI
+
+# Setup tracing
+register(project_name="chatbot", auto_instrument=True)
+
+client = OpenAI()
+tracer = trace.get_tracer(__name__)
+
+class ChatSession:
+    def __init__(self, user_id: str):
+        self.user_id = user_id
+        self.session_id = str(uuid.uuid4())
+        self.messages = []
+    
+    def chat(self, user_message: str) -> str:
+        """Process a chat message within a session."""
+        # Use session context
+        with using_session(session_id=self.session_id):
+            # Create a span for the entire chat turn
+            with tracer.start_as_current_span(
+                "chat-turn",
+                attributes={
+                    SpanAttributes.OPENINFERENCE_SPAN_KIND: "CHAIN",
+                    SpanAttributes.INPUT_VALUE: user_message,
+                    SpanAttributes.METADATA: json.dumps({
+                        "user_id": self.user_id,
+                        "turn_number": len(self.messages) // 2 + 1
+                    })
+                }
+            ) as span:
+                try:
+                    # Add user message
+                    self.messages.append({
+                        "role": "user",
+                        "content": user_message
+                    })
+                    
+                    # Get LLM response (automatically traced)
+                    response = client.chat.completions.create(
+                        model="gpt-4",
+                        messages=self.messages
+                    )
+                    
+                    assistant_message = response.choices[0].message.content
+                    self.messages.append({
+                        "role": "assistant",
+                        "content": assistant_message
+                    })
+                    
+                    span.set_attribute(
+                        SpanAttributes.OUTPUT_VALUE,
+                        assistant_message
+                    )
+                    span.set_status(Status(StatusCode.OK))
+                    
+                    return assistant_message
+                    
+                except Exception as e:
+                    span.record_exception(e)
+                    span.set_status(Status(StatusCode.ERROR, str(e)))
+                    raise
+
+# Gradio interface
+sessions = {}  # Store active sessions
+
+def chat_interface(user_id: str, message: str, history):
+    # Get or create session for user
+    if user_id not in sessions:
+        sessions[user_id] = ChatSession(user_id)
+    
+    response = sessions[user_id].chat(message)
+    return response
+
+if __name__ == "__main__":
+    demo = gr.ChatInterface(
+        fn=chat_interface,
+        title="Phoenix Chat (with Sessions)"
+    )
+    demo.launch()
+```
+
+## Session Metadata
+
+Enrich sessions with additional metadata:
+
+```python
+from openinference.instrumentation import using_session
+from opentelemetry import trace
+from openinference.semconv.trace import SpanAttributes
+import json
+
+tracer = trace.get_tracer(__name__)
+
+with using_session(session_id="session-123"):
+    with tracer.start_as_current_span("operation") as span:
+        # Add rich session metadata
+        metadata = {
+            "session_id": "session-123",
+            "user_id": "user-456",
+            "user_email": "user@example.com",
+            "session_start_time": "2024-01-15T10:00:00Z",
+            "client_type": "web",
+            "user_tier": "premium",
+            "experiment_variant": "variant-a"
+        }
+        
+        span.set_attribute(
+            SpanAttributes.METADATA,
+            json.dumps(metadata)
+        )
+```
+
+## Filtering by Session
+
+### In Phoenix UI
+
+1. Open Phoenix at http://localhost:6006
+2. Navigate to the Traces view
+3. Use the search bar: `metadata.session_id:"your-session-id"`
+4. View all traces for that session together
+
+### Using Phoenix Client
+
+```python
+import phoenix as px
+
+client = px.Client(endpoint="http://localhost:6006")
+
+# Get all spans for a session
+spans = client.get_spans(
+    filter_condition='metadata.session_id == "session-123"',
+    limit=1000
+)
+
+# Analyze session metrics
+for span in spans:
+    print(f"Span: {span.name}")
+    print(f"  Duration: {span.latency_ms}ms")
+    print(f"  Tokens: {span.attributes.get('llm.token_count.total', 0)}")
+```
+
+## Session Analytics
+
+Analyze sessions to understand user behavior:
+
+```python
+import phoenix as px
+import pandas as pd
+
+client = px.Client()
+
+# Get all traces
+spans_df = client.get_spans(limit=10000)
+
+# Extract session IDs from metadata
+def extract_session_id(metadata):
+    if pd.isna(metadata):
+        return None
+    try:
+        import json
+        meta = json.loads(metadata) if isinstance(metadata, str) else metadata
+        return meta.get('session_id')
+    except:
+        return None
+
+spans_df['session_id'] = spans_df['metadata'].apply(extract_session_id)
+
+# Calculate session metrics
+session_stats = spans_df.groupby('session_id').agg({
+    'latency_ms': ['mean', 'sum', 'count'],
+    'attributes.llm.token_count.total': 'sum'
+}).round(2)
+
+print("Session Statistics:")
+print(session_stats)
+
+# Find longest sessions
+longest_sessions = session_stats.sort_values(
+    ('latency_ms', 'count'),
+    ascending=False
+).head(10)
+
+print("\nLongest Sessions (by turn count):")
+print(longest_sessions)
+```
+
+## Session Best Practices
+
+<Steps>
+  <Step title="Use Meaningful Session IDs">
+    Include context in your session IDs:
+    ```python
+    # Good: Descriptive session IDs
+    session_id = f"user-{user_id}-conv-{conversation_id}"
+    
+    # Avoid: Opaque session IDs without context
+    session_id = str(uuid.uuid4())
+    ```
+  </Step>
+
+  <Step title="Add Rich Metadata">
+    Include metadata that helps with filtering and analysis:
+    ```python
+    metadata = {
+        "session_id": session_id,
+        "user_id": user_id,
+        "session_type": "support_chat",
+        "started_at": datetime.now().isoformat()
+    }
+    ```
+  </Step>
+
+  <Step title="Consistent Session Boundaries">
+    Define clear start and end points for sessions:
+    ```python
+    # Start new session for each conversation
+    class Conversation:
+        def __init__(self):
+            self.session_id = str(uuid.uuid4())
+            self.started_at = datetime.now()
+        
+        def end(self):
+            # Log session completion
+            logger.info(f"Session {self.session_id} ended")
+    ```
+  </Step>
+
+  <Step title="Handle Session Expiration">
+    Clean up old sessions:
+    ```python
+    from datetime import datetime, timedelta
+    
+    class SessionManager:
+        def __init__(self):
+            self.sessions = {}
+            self.session_timeout = timedelta(hours=1)
+        
+        def get_session(self, user_id: str):
+            if user_id in self.sessions:
+                session, last_active = self.sessions[user_id]
+                if datetime.now() - last_active < self.session_timeout:
+                    self.sessions[user_id] = (session, datetime.now())
+                    return session
+            
+            # Create new session if expired or doesn't exist
+            new_session = ChatSession(user_id)
+            self.sessions[user_id] = (new_session, datetime.now())
+            return new_session
+    ```
+  </Step>
+</Steps>
+
+## Sessions vs Projects
+
+| Feature | Sessions | Projects |
+|---------|----------|----------|
+| **Scope** | Groups related traces | Isolates entire applications |
+| **Duration** | Short-lived (minutes to hours) | Long-lived (entire app lifetime) |
+| **Use Case** | User conversations, workflows | Applications, environments |
+| **Filtering** | Via metadata search | Top-level selector |
+| **Isolation** | Logical grouping only | Complete data isolation |
+
+You can use both together:
+
+```python
+from phoenix.otel import register
+from openinference.instrumentation import using_session
+
+# Set project for the application
+register(project_name="production-chatbot", auto_instrument=True)
+
+# Use sessions to group conversations
+with using_session(session_id="user-123-conv-456"):
+    # Traces go to "production-chatbot" project
+    # And are grouped in session "user-123-conv-456"
+    process_chat()
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Annotations" icon="pen" href="/tracing/annotations">
+    Add feedback and evaluations to traces
+  </Card>
+  
+  <Card title="Cost Tracking" icon="dollar-sign" href="/tracing/cost-tracking">
+    Monitor LLM costs across sessions
+  </Card>
+</CardGroup>

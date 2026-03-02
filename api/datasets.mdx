@@ -1,0 +1,683 @@
+---
+title: Datasets API
+description: API endpoints for managing datasets and examples
+---
+
+The Datasets API provides endpoints for creating, managing, and exporting datasets. Datasets are collections of examples used for testing, evaluation, and experimentation.
+
+## Endpoints
+
+### List Datasets
+
+```http
+GET /v1/datasets
+```
+
+Retrieve a paginated list of datasets.
+
+#### Query Parameters
+
+<ParamField query="cursor" type="string">
+  Cursor for pagination (base64-encoded dataset ID)
+</ParamField>
+
+<ParamField query="name" type="string">
+  Optional dataset name to filter by
+</ParamField>
+
+<ParamField query="limit" type="integer" default="10">
+  Maximum number of datasets to return (must be greater than 0)
+</ParamField>
+
+#### Response
+
+<ResponseField name="data" type="array">
+  Array of dataset objects
+  
+  <Expandable title="Dataset Object">
+    <ResponseField name="id" type="string">
+      Global ID of the dataset
+    </ResponseField>
+    
+    <ResponseField name="name" type="string">
+      Name of the dataset
+    </ResponseField>
+    
+    <ResponseField name="description" type="string">
+      Dataset description
+    </ResponseField>
+    
+    <ResponseField name="metadata" type="object">
+      Custom metadata key-value pairs
+    </ResponseField>
+    
+    <ResponseField name="created_at" type="string">
+      ISO 8601 timestamp of creation
+    </ResponseField>
+    
+    <ResponseField name="updated_at" type="string">
+      ISO 8601 timestamp of last update
+    </ResponseField>
+    
+    <ResponseField name="example_count" type="integer">
+      Number of examples in the dataset
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="next_cursor" type="string">
+  Cursor for the next page (null if no more results)
+</ResponseField>
+
+#### Example
+
+<CodeGroup>
+```python Python
+import requests
+
+url = "http://localhost:6006/v1/datasets"
+headers = {"Authorization": "Bearer your-api-key"}
+params = {"limit": 10}
+
+response = requests.get(url, headers=headers, params=params)
+data = response.json()
+
+for dataset in data["data"]:
+    print(f"{dataset['name']}: {dataset['example_count']} examples")
+
+# Pagination
+if data["next_cursor"]:
+    next_response = requests.get(
+        url,
+        headers=headers,
+        params={"cursor": data["next_cursor"], "limit": 10}
+    )
+```
+
+```bash cURL
+curl -X GET "http://localhost:6006/v1/datasets?limit=10" \
+  -H "Authorization: Bearer your-api-key"
+```
+</CodeGroup>
+
+---
+
+### Get Dataset
+
+```http
+GET /v1/datasets/{id}
+```
+
+Retrieve a specific dataset by ID.
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Global ID of the dataset
+</ParamField>
+
+#### Response
+
+<ResponseField name="data" type="object">
+  Dataset object with all fields including `example_count`
+</ResponseField>
+
+#### Example
+
+<CodeGroup>
+```python Python
+import requests
+
+dataset_id = "RGF0YXNldDoxMjM="  # Global ID
+url = f"http://localhost:6006/v1/datasets/{dataset_id}"
+headers = {"Authorization": "Bearer your-api-key"}
+
+response = requests.get(url, headers=headers)
+dataset = response.json()["data"]
+
+print(f"Dataset: {dataset['name']}")
+print(f"Examples: {dataset['example_count']}")
+print(f"Created: {dataset['created_at']}")
+```
+
+```bash cURL
+curl -X GET "http://localhost:6006/v1/datasets/RGF0YXNldDoxMjM=" \
+  -H "Authorization: Bearer your-api-key"
+```
+</CodeGroup>
+
+---
+
+### Upload Dataset
+
+```http
+POST /v1/datasets/upload
+```
+
+Create a new dataset or append to an existing dataset from JSON, JSONL, CSV, or PyArrow.
+
+#### Query Parameters
+
+<ParamField query="sync" type="boolean" default="false">
+  If `true`, process synchronously and return dataset ID. If `false`, queue for async processing.
+</ParamField>
+
+#### Request Body
+
+The request format depends on the Content-Type:
+
+<AccordionGroup>
+  <Accordion title="JSON Format (application/json)">
+    <ParamField body="name" type="string" required>
+      Dataset name
+    </ParamField>
+    
+    <ParamField body="action" type="string" default="create">
+      `"create"` or `"append"`
+    </ParamField>
+    
+    <ParamField body="description" type="string">
+      Dataset description
+    </ParamField>
+    
+    <ParamField body="inputs" type="array" required>
+      Array of input objects (any JSON structure)
+    </ParamField>
+    
+    <ParamField body="outputs" type="array">
+      Array of output objects (same length as inputs)
+    </ParamField>
+    
+    <ParamField body="metadata" type="array">
+      Array of metadata objects (same length as inputs)
+    </ParamField>
+    
+    <ParamField body="splits" type="array">
+      Array of split assignments per example:
+      - String: Single split name
+      - Array of strings: Multiple splits
+      - null: No splits
+    </ParamField>
+    
+    <ParamField body="span_ids" type="array">
+      Array of span IDs to link examples back to traces (string or null per example)
+    </ParamField>
+  </Accordion>
+  
+  <Accordion title="File Upload (multipart/form-data)">
+    <ParamField body="name" type="string" required>
+      Dataset name
+    </ParamField>
+    
+    <ParamField body="action" type="string" default="create">
+      `"create"` or `"append"`
+    </ParamField>
+    
+    <ParamField body="description" type="string">
+      Dataset description
+    </ParamField>
+    
+    <ParamField body="input_keys[]" type="array" required>
+      Column names for input fields
+    </ParamField>
+    
+    <ParamField body="output_keys[]" type="array" required>
+      Column names for output fields
+    </ParamField>
+    
+    <ParamField body="metadata_keys[]" type="array">
+      Column names for metadata fields
+    </ParamField>
+    
+    <ParamField body="split_keys[]" type="array">
+      Column names containing split assignments
+    </ParamField>
+    
+    <ParamField body="span_id_key" type="string">
+      Column name containing span IDs
+    </ParamField>
+    
+    <ParamField body="file" type="file" required>
+      File to upload (CSV, JSONL, or PyArrow format)
+    </ParamField>
+  </Accordion>
+</AccordionGroup>
+
+#### Response (when sync=true)
+
+<ResponseField name="data" type="object">
+  <Expandable title="properties">
+    <ResponseField name="dataset_id" type="string">
+      Global ID of the created/updated dataset
+    </ResponseField>
+    
+    <ResponseField name="version_id" type="string">
+      Global ID of the dataset version
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### Example
+
+<CodeGroup>
+```python Python (JSON)
+import requests
+
+url = "http://localhost:6006/v1/datasets/upload"
+headers = {
+    "Authorization": "Bearer your-api-key",
+    "Content-Type": "application/json"
+}
+
+data = {
+    "name": "qa-dataset",
+    "description": "Question answering examples",
+    "action": "create",
+    "inputs": [
+        {"question": "What is Phoenix?"},
+        {"question": "How do I trace LLMs?"}
+    ],
+    "outputs": [
+        {"answer": "Phoenix is an observability platform"},
+        {"answer": "Use OpenTelemetry instrumentation"}
+    ],
+    "metadata": [
+        {"source": "docs"},
+        {"source": "faq"}
+    ],
+    "splits": [
+        "train",
+        ["train", "validation"]
+    ]
+}
+
+response = requests.post(
+    url,
+    json=data,
+    headers=headers,
+    params={"sync": True}
+)
+
+result = response.json()["data"]
+print(f"Dataset ID: {result['dataset_id']}")
+print(f"Version ID: {result['version_id']}")
+```
+
+```python Python (CSV Upload)
+import requests
+
+url = "http://localhost:6006/v1/datasets/upload"
+headers = {"Authorization": "Bearer your-api-key"}
+
+files = {
+    "file": ("dataset.csv", open("dataset.csv", "rb"), "text/csv")
+}
+
+data = {
+    "name": "qa-dataset",
+    "action": "create",
+    "input_keys[]": ["question"],
+    "output_keys[]": ["answer"],
+    "metadata_keys[]": ["source"],
+    "split_keys[]": ["split"]
+}
+
+response = requests.post(
+    url,
+    files=files,
+    data=data,
+    headers=headers,
+    params={"sync": True}
+)
+```
+
+```bash cURL (CSV)
+curl -X POST "http://localhost:6006/v1/datasets/upload?sync=true" \
+  -H "Authorization: Bearer your-api-key" \
+  -F "name=qa-dataset" \
+  -F "action=create" \
+  -F "input_keys[]=question" \
+  -F "output_keys[]=answer" \
+  -F "file=@dataset.csv;type=text/csv"
+```
+</CodeGroup>
+
+---
+
+### Get Dataset Examples
+
+```http
+GET /v1/datasets/{id}/examples
+```
+
+Retrieve examples from a dataset.
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Global ID of the dataset
+</ParamField>
+
+#### Query Parameters
+
+<ParamField query="version_id" type="string">
+  ID of the dataset version (defaults to latest version)
+</ParamField>
+
+<ParamField query="split" type="array">
+  List of split identifiers (Global IDs or names) to filter by
+</ParamField>
+
+#### Response
+
+<ResponseField name="data" type="object">
+  <Expandable title="properties">
+    <ResponseField name="dataset_id" type="string">
+      Global ID of the dataset
+    </ResponseField>
+    
+    <ResponseField name="version_id" type="string">
+      Global ID of the dataset version
+    </ResponseField>
+    
+    <ResponseField name="filtered_splits" type="array">
+      Names of splits that were filtered (if split parameter was used)
+    </ResponseField>
+    
+    <ResponseField name="examples" type="array">
+      Array of example objects
+      
+      <Expandable title="Example Object">
+        <ResponseField name="id" type="string">
+          Global ID of the example
+        </ResponseField>
+        
+        <ResponseField name="input" type="object">
+          Input data as key-value pairs
+        </ResponseField>
+        
+        <ResponseField name="output" type="object">
+          Output data as key-value pairs
+        </ResponseField>
+        
+        <ResponseField name="metadata" type="object">
+          Metadata as key-value pairs
+        </ResponseField>
+        
+        <ResponseField name="updated_at" type="string">
+          ISO 8601 timestamp of last update
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### Example
+
+<CodeGroup>
+```python Python
+import requests
+
+dataset_id = "RGF0YXNldDoxMjM="
+url = f"http://localhost:6006/v1/datasets/{dataset_id}/examples"
+headers = {"Authorization": "Bearer your-api-key"}
+
+# Get all examples
+response = requests.get(url, headers=headers)
+examples = response.json()["data"]["examples"]
+
+for example in examples:
+    print(f"Input: {example['input']}")
+    print(f"Output: {example['output']}")
+
+# Filter by split
+response = requests.get(
+    url,
+    headers=headers,
+    params={"split": ["train", "validation"]}
+)
+```
+
+```bash cURL
+curl -X GET "http://localhost:6006/v1/datasets/RGF0YXNldDoxMjM=/examples?split=train" \
+  -H "Authorization: Bearer your-api-key"
+```
+</CodeGroup>
+
+---
+
+### Delete Dataset
+
+```http
+DELETE /v1/datasets/{id}
+```
+
+Delete a dataset and all its associated data.
+
+<Warning>
+This operation is permanent and will delete all examples, versions, and experiments associated with the dataset.
+</Warning>
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Global ID of the dataset
+</ParamField>
+
+#### Response
+
+Returns HTTP 204 (No Content) on success.
+
+#### Example
+
+<CodeGroup>
+```python Python
+import requests
+
+dataset_id = "RGF0YXNldDoxMjM="
+url = f"http://localhost:6006/v1/datasets/{dataset_id}"
+headers = {"Authorization": "Bearer your-api-key"}
+
+response = requests.delete(url, headers=headers)
+print(response.status_code)  # 204
+```
+
+```bash cURL
+curl -X DELETE "http://localhost:6006/v1/datasets/RGF0YXNldDoxMjM=" \
+  -H "Authorization: Bearer your-api-key"
+```
+</CodeGroup>
+
+---
+
+### Export Dataset
+
+Phoenix provides multiple export endpoints for datasets:
+
+#### Export as CSV
+
+```http
+GET /v1/datasets/{id}/csv
+```
+
+Download dataset examples as a CSV file.
+
+#### Export as OpenAI Fine-tuning JSONL
+
+```http
+GET /v1/datasets/{id}/jsonl/openai_ft
+```
+
+Export in OpenAI's fine-tuning format with `messages` and `tools` fields.
+
+#### Export as OpenAI Evals JSONL
+
+```http
+GET /v1/datasets/{id}/jsonl/openai_evals
+```
+
+Export in OpenAI's evals format with `messages` and `ideal` fields.
+
+#### Query Parameters (all export endpoints)
+
+<ParamField query="version_id" type="string">
+  ID of the dataset version (defaults to latest)
+</ParamField>
+
+#### Example
+
+<CodeGroup>
+```python Python
+import requests
+
+dataset_id = "RGF0YXNldDoxMjM="
+
+# Export as CSV
+response = requests.get(
+    f"http://localhost:6006/v1/datasets/{dataset_id}/csv",
+    headers={"Authorization": "Bearer your-api-key"}
+)
+
+with open("dataset.csv", "wb") as f:
+    f.write(response.content)
+
+# Export for OpenAI fine-tuning
+response = requests.get(
+    f"http://localhost:6006/v1/datasets/{dataset_id}/jsonl/openai_ft",
+    headers={"Authorization": "Bearer your-api-key"}
+)
+
+with open("dataset.jsonl", "wb") as f:
+    f.write(response.content)
+```
+
+```bash cURL
+# Download as CSV
+curl -X GET "http://localhost:6006/v1/datasets/RGF0YXNldDoxMjM=/csv" \
+  -H "Authorization: Bearer your-api-key" \
+  -o dataset.csv
+
+# Download for OpenAI fine-tuning
+curl -X GET "http://localhost:6006/v1/datasets/RGF0YXNldDoxMjM=/jsonl/openai_ft" \
+  -H "Authorization: Bearer your-api-key" \
+  -o dataset.jsonl
+```
+</CodeGroup>
+
+---
+
+## Dataset Versions
+
+### List Dataset Versions
+
+```http
+GET /v1/datasets/{id}/versions
+```
+
+List all versions of a dataset.
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Global ID of the dataset
+</ParamField>
+
+#### Query Parameters
+
+<ParamField query="cursor" type="string">
+  Cursor for pagination
+</ParamField>
+
+<ParamField query="limit" type="integer" default="10">
+  Maximum number of versions to return
+</ParamField>
+
+#### Response
+
+<ResponseField name="data" type="array">
+  Array of dataset version objects
+  
+  <Expandable title="Version Object">
+    <ResponseField name="version_id" type="string">
+      Global ID of the version
+    </ResponseField>
+    
+    <ResponseField name="description" type="string">
+      Version description
+    </ResponseField>
+    
+    <ResponseField name="metadata" type="object">
+      Version metadata
+    </ResponseField>
+    
+    <ResponseField name="created_at" type="string">
+      ISO 8601 timestamp
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="next_cursor" type="string">
+  Pagination cursor
+</ResponseField>
+
+---
+
+## Error Handling
+
+<ResponseField name="404" type="error">
+  Dataset, version, or examples not found
+</ResponseField>
+
+<ResponseField name="409" type="error">
+  Dataset with the same name already exists (on create)
+</ResponseField>
+
+<ResponseField name="422" type="error">
+  Invalid request:
+  - Invalid dataset ID format
+  - Missing required fields (name, inputs)
+  - Invalid file format
+  - Mismatched array lengths
+</ResponseField>
+
+<ResponseField name="429" type="error">
+  Too many requests (async queue full)
+</ResponseField>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Version Your Data" icon="code-branch">
+    Datasets are automatically versioned - each upload creates a new version
+  </Card>
+  <Card title="Use Splits" icon="split">
+    Assign examples to splits (train/test/validation) for organized experimentation
+  </Card>
+  <Card title="Link to Traces" icon="link">
+    Use `span_ids` to connect dataset examples back to production traces
+  </Card>
+  <Card title="Async for Large Datasets" icon="bolt">
+    Use `sync=false` for large dataset uploads to avoid timeouts
+  </Card>
+</CardGroup>
+
+## Using Phoenix SDK
+
+For easier dataset management, use the Phoenix Python SDK:
+
+```python
+from phoenix.experiments import upload_dataset
+
+# Upload from pandas DataFrame
+dataset = upload_dataset(
+    dataset_name="qa-dataset",
+    dataframe=df,
+    input_keys=["question"],
+    output_keys=["answer"]
+)
+
+print(f"Dataset ID: {dataset.id}")
+print(f"Examples: {len(dataset)}")
+```
+
+See the [Datasets & Experiments](/datasets) documentation for complete SDK usage.
